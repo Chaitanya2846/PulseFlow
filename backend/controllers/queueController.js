@@ -4,148 +4,144 @@ import Patient from '../models/Patient.js';
 import Clinic from '../models/Clinic.js';
 import User from '../models/User.js';
 
-// In production, this should be inside your .env file
 const SECRET_KEY = process.env.JWT_SECRET || "pulseflow_super_secret_key_2026";
 
-// Helper to broadcast state to a SPECIFIC clinic room only
-const broadcastClinicState = async (io, clinicId) => {
-  const clinic = await Clinic.findById(clinicId);
-  const waitingList = await Patient.find({ clinicId, status: 'waiting' }).sort({ joinedAt: 1 });
-  
-  io.to(clinicId.toString()).emit('queue_updated', {
-    activeToken: clinic ? clinic.currentToken : 0,
-    averageTime: clinic ? clinic.avgConsultationTime.toFixed(1) : 10,
-    waitingList
-  });
+// ==========================================
+// 1. HELPER: SOCKET.IO BROADCASTER
+// ==========================================
+export const broadcastClinicState = async (io, clinicId) => {
+  try {
+    // .lean() strips heavy Mongoose methods, making the read operation 3-5x faster
+    const clinic = await Clinic.findById(clinicId).lean();
+    if (!clinic) return;
+
+    const waitingList = await Patient.find({ clinicId, status: 'waiting' })
+      .sort({ joinedAt: 1 })
+      .lean(); // Faster array population
+
+    // Broadcast instantly to the isolated clinic room
+    io.to(clinicId.toString()).emit('queue_updated', {
+      activeToken: clinic.currentToken,
+      averageTime: clinic.avgConsultationTime, // Keep raw decimal for precise frontend math
+      currentPatientCalledAt: clinic.currentPatientCalledAt, // NEW: Send the live timestamp
+      waitingList
+    });
+  } catch (error) {
+    console.error("Error broadcasting state:", error);
+  }
 };
 
-// 1. SECURE REGISTRATION: Creates Clinic + 2 Staff Accounts
-// 1A. DOCTOR REGISTRATION (Creates Clinic + Generates Code)
+// ==========================================
+// 2. AUTHENTICATION & REGISTRATION
+// ==========================================
 export const registerDoctor = async (req, res) => {
   try {
-    const { clinicName, doctorName, username, password } = req.body;
+    // We accept both 'doctorName' and 'name' to prevent frontend mismatch crashes
+    const { clinicName, doctorName, name, username, password } = req.body;
+    const finalDocName = doctorName || name;
     
-    // Check if username exists
     const existingUser = await User.findOne({ username });
     if (existingUser) return res.status(400).json({ message: "Username already taken" });
 
-    // Generate a unique 6-character Clinic Code (e.g., SC-7X4K92)
+    // Generate unique Clinic Code (e.g., SM-7X4K92)
     const prefix = clinicName.substring(0, 2).toUpperCase();
     const randomChars = Math.random().toString(36).substring(2, 8).toUpperCase();
     const clinicCode = `${prefix}-${randomChars}`;
 
-    // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create Clinic
     const newClinic = new Clinic({ name: clinicName, clinicCode });
     await newClinic.save();
 
-    // Create Doctor Account
     await User.create({ 
-      name: doctorName, 
+      name: finalDocName, 
       username, 
       password: hashedPassword, 
       role: 'doctor', 
       clinicId: newClinic._id 
     });
 
-    res.status(201).json({ 
-      success: true, 
-      message: "Clinic created successfully!", 
-      clinicCode 
-    });
+    res.status(201).json({ success: true, message: "Clinic created", clinicCode });
   } catch (error) {
-    res.status(500).json({ message: "Registration failed" });
+    // THIS WILL TELL US EXACTLY WHY IT IS FAILING
+    console.error("DETAILED REGISTRATION ERROR:", error);
+    res.status(500).json({ message: error.message || "Registration failed" });
   }
 };
 
-// 1B. RECEPTIONIST REGISTRATION (Joins existing Clinic via Code)
 export const registerReceptionist = async (req, res) => {
   try {
-    const { clinicCode, receptionistName, username, password } = req.body;
+    const { clinicCode, name, receptionistName, username, password } = req.body;
+    const finalName = name || receptionistName;
 
-    // Verify Clinic Code exists
     const clinic = await Clinic.findOne({ clinicCode: clinicCode.toUpperCase() });
     if (!clinic) return res.status(404).json({ message: "Invalid Clinic Code" });
 
-    // Check if username exists
     const existingUser = await User.findOne({ username });
     if (existingUser) return res.status(400).json({ message: "Username already taken" });
 
-    // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create Receptionist Account linked to the found clinicId
     await User.create({
-      name: receptionistName,
-      username,
-      password: hashedPassword,
-      role: 'receptionist',
+      name: finalName, 
+      username, 
+      password: hashedPassword, 
+      role: 'receptionist', 
       clinicId: clinic._id
     });
 
-    res.status(201).json({ success: true, message: "Receptionist joined successfully!" });
+    res.status(201).json({ success: true, message: "Joined successfully" });
   } catch (error) {
     res.status(500).json({ message: "Registration failed" });
   }
 };
 
-// 2. SECURE LOGIN: Generates JWT
 export const loginClinic = async (req, res) => {
   try {
     const { username, password } = req.body;
     
-    // Find user
     const user = await User.findOne({ username });
     if (!user) return res.status(401).json({ message: "Invalid username or password" });
 
-    // Verify Password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ message: "Invalid username or password" });
 
-    // Generate Encrypted Token
     const token = jwt.sign(
       { userId: user._id, role: user.role, clinicId: user.clinicId }, 
       SECRET_KEY, 
       { expiresIn: '12h' }
     );
-
-    res.status(200).json({ 
-      success: true, 
-      token, 
-      role: user.role, 
-      clinicId: user.clinicId 
-    });
+    
+    res.status(200).json({ success: true, token, role: user.role, clinicId: user.clinicId });
   } catch (error) {
     res.status(500).json({ message: "Login failed" });
   }
 };
 
-// 3. SECURED ACTION: Add a new patient
-// SECURED ACTION: Add a new patient
+// ==========================================
+// 3. RECEPTIONIST ACTIONS (Queue Management)
+// ==========================================
 export const addPatient = async (req, res) => {
   try {
     const clinicId = req.user.clinicId; 
-    const { name, mobile, priority } = req.body; // Added mobile
+    const { name, mobile, priority } = req.body;
     
     const clinic = await Clinic.findById(clinicId);
     if (!clinic) return res.status(404).json({ message: "Clinic not found" });
 
     clinic.highestToken += 1;
-    const newToken = clinic.highestToken;
 
-    // Generate Tracking ID: e.g., PF-8342
+    // Generate unique tracking ID (e.g., PF-4921)
     const trackingId = `PF-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const newPatient = new Patient({
-      clinicId,
-      tokenNumber: newToken,
-      trackingId,
-      name,
-      mobile,
+      clinicId, 
+      tokenNumber: clinic.highestToken, 
+      trackingId, 
+      name, 
+      mobile, 
       priority: priority || 'Normal'
     });
 
@@ -155,141 +151,46 @@ export const addPatient = async (req, res) => {
     await broadcastClinicState(req.io, clinicId);
     res.status(201).json({ success: true, patient: newPatient });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error adding patient" });
+    res.status(500).json({ message: "Error adding patient" });
   }
 };
 
-// 4. SECURED ACTION: Doctor calls next patient
-export const callNext = async (req, res) => {
-  try {
-    const clinicId = req.user.clinicId; 
-    const clinic = await Clinic.findById(clinicId);
-    if (!clinic) return res.status(404).json({ message: "Clinic not found" });
-
-    // SECURITY UPDATE: Only Doctors can call the next patient
-    if (req.user.role !== 'doctor') {
-      return res.status(403).json({ message: "Only doctors can call the next patient." });
-    }
-
-    // Ensure the doctor isn't already seeing someone
-    if (clinic.currentToken !== 0) {
-      return res.status(400).json({ message: "Please complete the current consultation first." });
-    }
-
-    const nextPatient = await Patient.findOne({ clinicId, status: 'waiting' }).sort({ joinedAt: 1 });
-    
-    if (nextPatient) {
-      nextPatient.status = 'serving';
-      nextPatient.calledAt = new Date();
-      clinic.currentToken = nextPatient.tokenNumber;
-      clinic.lastUpdated = new Date();
-      await nextPatient.save();
-    } else {
-      return res.status(400).json({ success: false, message: "Queue is empty" });
-    }
-
-    await clinic.save();
-    await broadcastClinicState(req.io, clinicId);
-    res.status(200).json({ success: true, message: "Advanced to next patient" });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error calling next patient" });
-  }
-};
-
-// NEW: SECURED ACTION: Receptionist Cancels/Deletes a Token
-export const cancelPatient = async (req, res) => {
-  try {
-    if (req.user.role !== 'receptionist') return res.status(403).json({ message: "Only receptionists can cancel tokens." });
-    
-    const { patientId } = req.params;
-    await Patient.findByIdAndDelete(patientId); // Removes them from the queue entirely
-    
-    await broadcastClinicState(req.io, req.user.clinicId);
-    res.status(200).json({ success: true, message: "Patient removed from queue" });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error cancelling patient" });
-  }
-};
-
-// NEW: SECURED ACTION: Receptionist Edits a Patient
 export const editPatient = async (req, res) => {
   try {
-    if (req.user.role !== 'receptionist') return res.status(403).json({ message: "Only receptionists can edit details." });
+    if (req.user.role !== 'receptionist') return res.status(403).json({ message: "Only staff can edit patients" });
     
     const { patientId } = req.params;
     const { name, mobile } = req.body;
     
     await Patient.findByIdAndUpdate(patientId, { name, mobile });
-    
     await broadcastClinicState(req.io, req.user.clinicId);
-    res.status(200).json({ success: true, message: "Patient updated" });
+    res.status(200).json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error editing patient" });
+    res.status(500).json({ message: "Error editing patient" });
   }
 };
 
-// 5. SECURED ACTION: Doctor completes consultation
-export const completeConsultation = async (req, res) => {
+export const cancelPatient = async (req, res) => {
   try {
-    const clinicId = req.user.clinicId;
-    const clinic = await Clinic.findById(clinicId);
+    if (req.user.role !== 'receptionist') return res.status(403).json({ message: "Only staff can cancel tokens" });
     
-    // Find the patient who is currently being served in this clinic
-    const currentPatient = await Patient.findOne({ clinicId, status: 'serving' });
-    
-    if (currentPatient) {
-      currentPatient.status = 'completed';
-      currentPatient.completedAt = new Date();
-      
-      const durationMs = currentPatient.completedAt - (currentPatient.calledAt || currentPatient.joinedAt);
-      const durationMins = Math.max(durationMs / 1000 / 60, 1); // Ensure at least 1 min
-      currentPatient.consultationDuration = durationMins;
-      await currentPatient.save();
-
-      // Recalculate AI average
-      clinic.avgConsultationTime = (clinic.avgConsultationTime * 0.7) + (durationMins * 0.3);
-      clinic.currentToken = 0; 
-      await clinic.save();
-
-      await broadcastClinicState(req.io, clinicId);
-      res.status(200).json({ success: true, message: "Consultation completed" });
-    } else {
-      res.status(400).json({ success: false, message: "No patient is currently being served" });
-    }
+    await Patient.findByIdAndDelete(req.params.patientId);
+    await broadcastClinicState(req.io, req.user.clinicId);
+    res.status(200).json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ message: "Error cancelling patient" });
   }
 };
 
-// 6. PUBLIC ACTION: Get current state (TVs and Phones use this)
-export const getQueueState = async (req, res) => {
-  try {
-    // This remains req.query because TVs and Phones don't have login tokens
-    const { clinicId } = req.query; 
-    if (!clinicId) return res.status(400).json({ message: "Clinic ID required" });
-
-    const clinic = await Clinic.findById(clinicId);
-    const waitingList = await Patient.find({ clinicId, status: 'waiting' }).sort({ joinedAt: 1 });
-    
-    res.status(200).json({
-      activeToken: clinic ? clinic.currentToken : 0,
-      averageTime: clinic ? clinic.avgConsultationTime.toFixed(1) : 10,
-      waitingList
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Error fetching queue" });
-  }
-};
-
-// 7. SECURED ACTION: Reset for a new session
 export const resetQueue = async (req, res) => {
   try {
-    const clinicId = req.user.clinicId; // Pulled from JWT
+    const clinicId = req.user.clinicId;
     const clinic = await Clinic.findById(clinicId);
     
     if (clinic) {
       clinic.currentToken = 0;
       clinic.highestToken = 0;
+      clinic.currentPatientCalledAt = null; // NEW: Clear the live timer
       await clinic.save();
     }
 
@@ -298,10 +199,123 @@ export const resetQueue = async (req, res) => {
     await broadcastClinicState(req.io, clinicId);
     res.status(200).json({ success: true, message: "Queue reset for new session" });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Error resetting queue" });
+    res.status(500).json({ message: "Error resetting queue" });
   }
 };
-// PUBLIC ACTION: TV Display using Clinic Code
+
+export const updateAverageTime = async (req, res) => {
+  try {
+    if (req.user.role !== 'receptionist') {
+      return res.status(403).json({ message: "Only staff can update settings" });
+    }
+    
+    const { newAverageTime } = req.body;
+    const clinic = await Clinic.findById(req.user.clinicId);
+    
+    if (clinic) {
+      clinic.avgConsultationTime = Number(newAverageTime);
+      await clinic.save();
+      await broadcastClinicState(req.io, req.user.clinicId);
+      res.status(200).json({ success: true });
+    }
+  } catch (error) {
+    res.status(500).json({ message: "Error updating time" });
+  }
+};
+
+// ==========================================
+// 4. DOCTOR ACTIONS (Flow Control)
+// ==========================================
+export const callNext = async (req, res) => {
+  try {
+    const clinicId = req.user.clinicId; 
+    
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({ message: "Only doctors can call the next patient." });
+    }
+
+    const clinic = await Clinic.findById(clinicId);
+    if (clinic.currentToken !== 0) {
+      return res.status(400).json({ message: "Complete the current consultation first." });
+    }
+
+    const nextPatient = await Patient.findOne({ clinicId, status: 'waiting' }).sort({ joinedAt: 1 });
+    
+    if (nextPatient) {
+      nextPatient.status = 'serving';
+      nextPatient.calledAt = new Date();
+      await nextPatient.save();
+      
+      clinic.currentToken = nextPatient.tokenNumber;
+      clinic.currentPatientCalledAt = new Date(); // NEW: Start the live timer!
+      await clinic.save();
+    } else {
+      return res.status(400).json({ message: "Queue is empty" });
+    }
+
+    await broadcastClinicState(req.io, clinicId);
+    res.status(200).json({ success: true });
+  } catch (error) {
+    res.status(500).json({ message: "Error calling next patient" });
+  }
+};
+
+export const completeConsultation = async (req, res) => {
+  try {
+    const clinicId = req.user.clinicId;
+    const clinic = await Clinic.findById(clinicId);
+    
+    const currentPatient = await Patient.findOne({ clinicId, status: 'serving' });
+    
+    if (currentPatient) {
+      currentPatient.status = 'completed';
+      currentPatient.completedAt = new Date();
+      
+      const durationMs = currentPatient.completedAt - (currentPatient.calledAt || currentPatient.joinedAt);
+      const durationMins = Math.max(durationMs / 1000 / 60, 1); 
+      
+      currentPatient.consultationDuration = durationMins;
+      await currentPatient.save();
+
+      // Dynamic AI Wait Time Engine (70% history, 30% recent)
+      clinic.avgConsultationTime = (clinic.avgConsultationTime * 0.7) + (durationMins * 0.3);
+      clinic.currentToken = 0; 
+      clinic.currentPatientCalledAt = null; // NEW: Reset the live timer
+      await clinic.save();
+
+      await broadcastClinicState(req.io, clinicId);
+      res.status(200).json({ success: true });
+    } else {
+      res.status(400).json({ message: "No patient is currently inside." });
+    }
+  } catch (error) {
+    res.status(500).json({ message: "Error completing consultation" });
+  }
+};
+
+// ==========================================
+// 5. PUBLIC ACTIONS (No Auth Required)
+// ==========================================
+export const getQueueState = async (req, res) => {
+  try {
+    const { clinicId } = req.query; 
+    if (!clinicId) return res.status(400).json({ message: "Clinic ID required" });
+
+    const clinic = await Clinic.findById(clinicId);
+    const waitingList = await Patient.find({ clinicId, status: 'waiting' }).sort({ joinedAt: 1 });
+    
+    res.status(200).json({
+      clinicCode: clinic ? clinic.clinicCode : '',
+      activeToken: clinic ? clinic.currentToken : 0,
+      averageTime: clinic ? clinic.avgConsultationTime : 10, // unrounded
+      currentPatientCalledAt: clinic ? clinic.currentPatientCalledAt : null, // NEW
+      waitingList
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching queue" });
+  }
+};
+
 export const getPublicQueueState = async (req, res) => {
   try {
     const { clinicCode } = req.params;
@@ -315,29 +329,28 @@ export const getPublicQueueState = async (req, res) => {
       clinicName: clinic.name,
       clinicId: clinic._id,
       activeToken: clinic.currentToken,
-      averageTime: clinic.avgConsultationTime.toFixed(1),
+      averageTime: clinic.avgConsultationTime, // unrounded
+      currentPatientCalledAt: clinic.currentPatientCalledAt, // NEW
       waitingList
     });
   } catch (error) {
     res.status(500).json({ message: "Error fetching public queue" });
   }
 };
-// 8. PUBLIC ACTION: Mobile Tracking API
+
 export const trackPatient = async (req, res) => {
   try {
     const { trackingId } = req.params;
     
-    // Find the exact patient, regardless of their status
     const patient = await Patient.findOne({ trackingId });
     if (!patient) return res.status(404).json({ message: "Patient not found" });
 
     const clinic = await Clinic.findById(patient.clinicId);
     
-    // Calculate how many people are strictly ahead of them
     const peopleAhead = await Patient.countDocuments({
       clinicId: patient.clinicId,
       status: 'waiting',
-      joinedAt: { $lt: patient.joinedAt } // Only count people who joined BEFORE them
+      joinedAt: { $lt: patient.joinedAt } 
     });
 
     res.status(200).json({
@@ -345,7 +358,8 @@ export const trackPatient = async (req, res) => {
       clinic: {
         name: clinic.name,
         activeToken: clinic.currentToken,
-        averageTime: clinic.avgConsultationTime,
+        averageTime: clinic.avgConsultationTime, // unrounded
+        currentPatientCalledAt: clinic.currentPatientCalledAt, // NEW
         clinicId: clinic._id
       },
       peopleAhead

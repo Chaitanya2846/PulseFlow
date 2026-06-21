@@ -8,30 +8,46 @@ import {
   callNext, 
   completeConsultation, 
   getQueueState,
+  updateAverageTime,
   trackPatient,
   getPublicQueueState,
-  resetQueue ,
+  resetQueue,
   cancelPatient,
   editPatient
 } from '../controllers/queueController.js';
 
 const router = express.Router();
 
-// --- PUBLIC ROUTES ---
-// Anyone can hit these endpoints to create accounts or view the public queue
+// ==========================================
+// 1. PUBLIC ROUTES (No Token Required)
+// ==========================================
+// Anyone can hit these endpoints to create accounts or log in
 router.post('/register/doctor', registerDoctor);
 router.post('/register/receptionist', registerReceptionist);
 router.post('/login', loginClinic);
+
+// ==========================================
+// 2. PUBLIC READ-ONLY ROUTES (Phones & TVs)
+// ==========================================
+// Fetches live data without requiring a login token
 router.get('/state', getQueueState); 
 router.get('/public/:clinicCode', getPublicQueueState);
 router.get('/track/:trackingId', trackPatient);
-// --- SECURED ROUTES ---
-// The verifyToken middleware ensures the user has a valid JWT before allowing the action
+
+// ==========================================
+// 3. SECURED ROUTES (Must be logged in)
+// ==========================================
+// The verifyToken middleware ensures valid JWT before allowing the action
+
+// Receptionist Actions
 router.post('/add', verifyToken, addPatient);
+router.put('/edit/:patientId', verifyToken, editPatient);        
+router.delete('/cancel/:patientId', verifyToken, cancelPatient); 
+router.post('/reset', verifyToken, resetQueue); 
+router.put('/settings/time', verifyToken, updateAverageTime);
+
+// Doctor Actions
 router.put('/advance', verifyToken, callNext);              
 router.put('/complete', verifyToken, completeConsultation); 
-router.post('/reset', verifyToken, resetQueue); 
-router.delete('/cancel/:patientId', verifyToken, cancelPatient); // <-- ADD THIS
-router.put('/edit/:patientId', verifyToken, editPatient);        // <-- ADD THIS            
 
 export default router;

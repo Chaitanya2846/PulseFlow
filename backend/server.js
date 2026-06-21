@@ -18,8 +18,9 @@ app.use(express.json());
 const io = new Server(server, {
   cors: {
     origin: "*", 
-    methods: ["GET", "POST", "PUT"]
-  }
+    methods: ["GET", "POST", "PUT", "DELETE"]
+  },
+  transports: ['websocket', 'polling'] // Explicitly allow websocket first
 });
 
 // Pass the 'io' instance to req object so controllers can broadcast

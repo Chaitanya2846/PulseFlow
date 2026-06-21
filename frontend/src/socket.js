@@ -1,10 +1,8 @@
 import { io } from 'socket.io-client';
 
-// This connects your React frontend to your Node/Express backend
-const URL = `http://${window.location.hostname}:5000`;
-
-export const socket = io(URL, {
-  autoConnect: true,
-  reconnection: true,
-  transports: ['websocket'] // Crucial for the hackathon edge cases!
+// Forcing 'websocket' skips the standard HTTP long-polling handshake
+// This cuts cross-screen broadcast latency down to ~20-50ms.
+export const socket = io(`http://${window.location.hostname}:5000`, {
+  transports: ['websocket'],
+  upgrade: false 
 });
