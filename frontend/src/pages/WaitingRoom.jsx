@@ -26,50 +26,156 @@ export default function WaitingRoom() {
     return () => socket.off('queue_updated');
   }, [clinicCode]);
 
-  if (error) return <div className="text-4xl font-black text-center mt-20 text-red-500">{error}</div>;
-  if (!queueData) return <div className="text-4xl font-black text-center mt-20">Loading Display...</div>;
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="text-center">
+          <h1 className="text-5xl font-bold mb-3" style={{ color: 'var(--color-error)' }}>
+            Display Error
+          </h1>
+          <p className="text-2xl" style={{ color: 'var(--color-text-secondary)' }}>
+            {error}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!queueData) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="text-center">
+          <Activity size={64} className="mx-auto mb-4 animate-pulse" style={{ color: 'var(--color-primary)' }} />
+          <p className="text-3xl font-bold" style={{ color: 'var(--color-text-secondary)' }}>
+            Loading Queue Display...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const nextToken = queueData.waitingList.length > 0 ? queueData.waitingList[0].tokenNumber : '--';
+  const upcomingTokens = queueData.waitingList.slice(1, 6);
 
   return (
-    <div className="min-h-screen bg-black text-white p-8 font-sans flex flex-col">
-      <header className="flex justify-between items-center border-b-4 border-white pb-6 mb-12">
-        <h1 className="text-6xl font-black flex items-center gap-4">
-          <Activity className="w-16 h-16 stroke-[4px] text-[#ffe600]" />
-          {queueData.clinicName}
-        </h1>
-        <div className="text-3xl font-bold bg-white text-black px-6 py-3">
-          Est. Wait: {queueData.averageTime} min/patient
+    <div className="min-h-screen bg-background p-6 font-sans flex flex-col" style={{ backgroundColor: 'var(--color-surface)' }}>
+      {/* Header */}
+      <header className="mb-8" style={{ borderBottom: '3px solid var(--color-primary)' }}>
+        <div className="flex items-center gap-4 pb-6">
+          <div
+            className="w-16 h-16 rounded-lg flex items-center justify-center"
+            style={{ backgroundColor: 'var(--color-primary)' }}
+          >
+            <Activity size={40} className="text-white" />
+          </div>
+          <div className="flex-1">
+            <h1 className="text-5xl font-bold" style={{ color: 'var(--color-text)' }}>
+              {queueData.clinicName}
+            </h1>
+            <p className="text-xl font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+              Queue Management System
+            </p>
+          </div>
+          <div
+            className="px-6 py-4 rounded-lg text-center"
+            style={{
+              backgroundColor: 'var(--color-secondary-light)',
+              color: 'var(--color-secondary)',
+            }}
+          >
+            <p className="text-sm font-semibold">Avg Wait</p>
+            <p className="text-3xl font-bold">{queueData.averageTime} min</p>
+          </div>
         </div>
       </header>
 
-      <div className="flex-1 grid grid-cols-2 gap-12">
-        {/* LEFT: Current Token */}
-        <div className="bg-[#b3ffb3] border-8 border-white p-12 flex flex-col items-center justify-center text-black">
-          <h2 className="text-5xl font-black uppercase tracking-widest mb-8">Now Serving</h2>
-          <div className="text-[15rem] leading-none font-black tracking-tighter">
+      {/* Main Content Grid */}
+      <div className="flex-1 grid grid-cols-3 gap-8">
+        {/* Left: Now Serving - Large Display */}
+        <div
+          className="col-span-1 rounded-xl p-8 text-center flex flex-col items-center justify-center"
+          style={{
+            backgroundColor: 'var(--color-primary-light)',
+            border: '4px solid var(--color-primary)',
+          }}
+        >
+          <p className="text-2xl font-bold mb-4" style={{ color: 'var(--color-primary)' }}>
+            NOW SERVING
+          </p>
+          <div
+            className="text-9xl font-black leading-none mb-4"
+            style={{ color: 'var(--color-primary)' }}
+          >
             {queueData.activeToken === 0 ? '--' : `A-${queueData.activeToken}`}
           </div>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            Consultation in progress
+          </p>
         </div>
 
-        {/* RIGHT: Up Next & Waiting */}
-        <div className="flex flex-col gap-12">
-          <div className="bg-[#3399ff] border-8 border-white p-12 flex flex-col items-center justify-center text-black">
-            <h2 className="text-4xl font-black uppercase tracking-widest mb-4">Up Next</h2>
-            <div className="text-8xl font-black tracking-tighter">
-              {nextToken !== '--' ? `A-${nextToken}` : '--'}
-            </div>
+        {/* Middle: Up Next */}
+        <div
+          className="col-span-1 rounded-xl p-8 text-center flex flex-col items-center justify-center"
+          style={{
+            backgroundColor: 'var(--color-secondary-light)',
+            border: '4px solid var(--color-secondary)',
+          }}
+        >
+          <p className="text-2xl font-bold mb-4" style={{ color: 'var(--color-secondary)' }}>
+            UP NEXT
+          </p>
+          <div
+            className="text-9xl font-black leading-none mb-4"
+            style={{ color: 'var(--color-secondary)' }}
+          >
+            {nextToken !== '--' ? `A-${nextToken}` : '--'}
           </div>
-          
-          <div className="border-8 border-white p-8 flex-1">
-            <h3 className="text-3xl font-black uppercase border-b-4 border-white pb-4 mb-6">Waiting List</h3>
-            <ul className="grid grid-cols-2 gap-6 text-4xl font-bold">
-              {queueData.waitingList.slice(1, 7).map((patient) => (
-                <li key={patient._id}>A-{patient.tokenNumber}</li>
-              ))}
-            </ul>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            Please prepare for consultation
+          </p>
+        </div>
+
+        {/* Right: Waiting List */}
+        <div
+          className="col-span-1 rounded-xl p-8"
+          style={{
+            backgroundColor: 'var(--color-background)',
+            border: '4px solid var(--color-border)',
+          }}
+        >
+          <p className="text-2xl font-bold mb-6" style={{ color: 'var(--color-text)' }}>
+            WAITING QUEUE
+          </p>
+          <div className="space-y-2">
+            {upcomingTokens.length === 0 ? (
+              <p className="text-center py-12" style={{ color: 'var(--color-text-secondary)' }}>
+                No patients waiting
+              </p>
+            ) : (
+              upcomingTokens.map((patient, index) => (
+                <div
+                  key={patient._id}
+                  className="p-4 rounded-lg text-center"
+                  style={{
+                    backgroundColor: index === 0 ? 'var(--color-primary-light)' : 'var(--color-surface)',
+                    border: index === 0 ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                  }}
+                >
+                  <p className="text-4xl font-black" style={{ color: 'var(--color-primary)' }}>
+                    A-{patient.tokenNumber}
+                  </p>
+                </div>
+              ))
+            )}
           </div>
         </div>
+      </div>
+
+      {/* Footer */}
+      <div className="mt-8 pt-6" style={{ borderTop: '1px solid var(--color-border)' }}>
+        <p className="text-center text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+          Display updates automatically. Last updated: {new Date().toLocaleTimeString()}
+        </p>
       </div>
     </div>
   );

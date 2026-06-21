@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { socket } from '../socket';
-import { Users, UserPlus, Activity, QrCode, MessageCircle, Trash2, Edit3 } from 'lucide-react';
+import { Users, UserPlus, Activity, QrCode, MessageCircle, Trash2, Edit3, LogOut, RotateCcw } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 export default function Receptionist() {
@@ -114,186 +114,287 @@ export default function Receptionist() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f4f4f0] p-8 font-sans">
+    <div className="min-h-screen bg-surface">
       {/* Header */}
-      <header className="mb-10 flex justify-between items-end border-b-4 border-black pb-4">
-        <div>
-          <h1 className="text-5xl font-black tracking-tight flex items-center gap-3">
-            <Activity className="w-12 h-12 stroke-[3px]" />
-            PulseFlow
-          </h1>
-          <p className="text-xl font-bold mt-2 text-gray-700 uppercase tracking-widest">
-            Reception Control Panel
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={handleResetSession}
-            className="bg-[#ffe600] border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] px-6 py-3 font-black uppercase tracking-wider hover:bg-[#e6cc00] transition-transform active:translate-y-1 active:shadow-none text-black"
-          >
-            Start New Session
-          </button>
-          <div className="bg-white border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] px-6 py-3 flex items-center gap-3">
-            <QrCode className="w-6 h-6" />
-            <span className="font-black uppercase tracking-wider">Mobile Sync</span>
+      <header
+        className="border-b"
+        style={{
+          borderColor: 'var(--color-border)',
+          backgroundColor: 'var(--color-background)',
+        }}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-12 h-12 rounded-lg flex items-center justify-center"
+              style={{ backgroundColor: 'var(--color-primary)' }}
+            >
+              <Activity size={28} className="text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>
+                PulseFlow
+              </h1>
+              <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                Reception Control
+              </p>
+            </div>
           </div>
-          <button 
-            onClick={handleLogout}
-            className="bg-black text-white border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] px-6 py-3 font-black uppercase tracking-wider hover:bg-gray-800 transition-transform active:translate-y-1 active:shadow-none"
-          >
-            Logout
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleResetSession}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all text-white"
+              style={{ backgroundColor: 'var(--color-warning)' }}
+              onMouseEnter={(e) => (e.target.style.opacity = '0.8')}
+              onMouseLeave={(e) => (e.target.style.opacity = '1')}
+              title="Start new session"
+            >
+              <RotateCcw size={18} /> New Session
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all"
+              style={{
+                color: 'var(--color-error)',
+                backgroundColor: 'var(--color-error-light)',
+              }}
+              onMouseEnter={(e) => (e.target.style.backgroundColor = 'var(--color-error)')
+                && (e.target.style.color = 'white')}
+              onMouseLeave={(e) => (e.target.style.backgroundColor = 'var(--color-error-light)')
+                && (e.target.style.color = 'var(--color-error)')}
+            >
+              <LogOut size={18} /> Sign Out
+            </button>
+          </div>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
-        {/* Left Column: Action Center */}
-        <div className="lg:col-span-5 flex flex-col gap-8">
-          
-          {/* Add Patient Form */}
-          <form onSubmit={handleAddPatient} className="bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] p-6 flex flex-col gap-4">
-            <h2 className="text-2xl font-black uppercase border-b-4 border-black pb-2 mb-2">New Entry</h2>
-            <div className="flex flex-col gap-4">
-              <input 
-                type="text" 
-                value={patientName}
-                onChange={(e) => setPatientName(e.target.value)}
-                placeholder="PATIENT NAME" 
-                className="bg-gray-100 border-4 border-black p-4 text-xl font-bold placeholder-gray-400 focus:outline-none focus:bg-[#ffffb3] transition-colors"
-                required
-              />
-              <input 
-                type="text" 
-                value={mobileNumber}
-                onChange={(e) => setMobileNumber(e.target.value)}
-                placeholder="MOBILE NUMBER (OPTIONAL)" 
-                className="bg-gray-100 border-4 border-black p-4 text-xl font-bold placeholder-gray-400 focus:outline-none focus:bg-[#ffffb3] transition-colors"
-              />
-            </div>
-            <button 
-              type="submit"
-              className="bg-[#3399ff] border-4 border-black text-white py-4 font-black text-xl flex justify-center items-center gap-2 hover:bg-[#1a8cff] transition-colors"
-            >
-              <UserPlus className="stroke-[3px]" />
-              ADD PATIENT
-            </button>
-          </form>
-
-          {/* Active Token Card */}
-          <div className="bg-[#b3ffb3] border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] p-8 text-center flex flex-col justify-center items-center h-48 transition-transform hover:-translate-y-1">
-            <h2 className="text-xl font-bold uppercase tracking-widest mb-2">Doctor Is Serving</h2>
-            <div className="text-7xl font-black tracking-tighter">
-              {queueData.activeToken === 0 ? '--' : `A-${queueData.activeToken}`}
-            </div>
-          </div>
-
-          {/* Live Algorithm Data */}
-          <div className="bg-white border-4 border-black p-6 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
-            <p className="font-bold text-gray-600 uppercase text-sm mb-1">Live Engine Data</p>
-            <p className="text-2xl font-black">Avg Consultation: {queueData.averageTime} mins</p>
-          </div>
-        </div>
-
-        {/* Right Column: Queue Management */}
-        <div className="lg:col-span-7 flex flex-col gap-8">
-          
-          {/* Waiting List */}
-          <div className="bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex-1 overflow-hidden flex flex-col">
-            <div className="bg-black text-white p-4 flex items-center justify-between">
-              <h2 className="text-2xl font-black flex items-center gap-3 uppercase">
-                <Users className="stroke-[3px]" />
-                Waiting Queue
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left Column: Add Patient + Status */}
+          <div className="flex flex-col gap-6">
+            {/* Add Patient Form */}
+            <form onSubmit={handleAddPatient} className="card p-6">
+              <h2 className="text-lg font-bold mb-4" style={{ color: 'var(--color-text)' }}>
+                Add Patient
               </h2>
-              <span className="font-bold text-xl bg-white text-black px-3 py-1 border-2 border-black">
-                {queueData.waitingList.length} Waiting
-              </span>
-            </div>
-            
-            <div className="p-4 overflow-y-auto max-h-[700px]">
-              {queueData.waitingList.length === 0 ? (
-                <div className="text-center text-gray-500 font-bold text-2xl mt-12 uppercase">
-                  Queue is empty
+              <div className="space-y-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                    Patient Name
+                  </label>
+                  <input
+                    type="text"
+                    value={patientName}
+                    onChange={(e) => setPatientName(e.target.value)}
+                    placeholder="Enter patient name"
+                    required
+                  />
                 </div>
-              ) : (
-                <ul className="space-y-4">
-                  {queueData.waitingList.map((patient, index) => {
-                    const trackingUrl = `http://${window.location.host}/track/${patient.trackingId || patient.tokenNumber}`;
-                    const waMessage = `Hello ${patient.name},\n\nYour token number is A-${patient.tokenNumber}.\n\nTrack your live queue status here:\n${trackingUrl}\n\n- PulseFlow Clinic`;
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                    Mobile Number
+                  </label>
+                  <input
+                    type="text"
+                    value={mobileNumber}
+                    onChange={(e) => setMobileNumber(e.target.value)}
+                    placeholder="+91 98765 43210"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="btn-primary w-full py-3 font-semibold flex items-center justify-center gap-2 mt-2"
+                >
+                  <UserPlus size={18} /> Add Patient
+                </button>
+              </div>
+            </form>
 
-                    return (
-                      <li key={patient._id} className="flex items-center justify-between bg-gray-100 border-4 border-black p-4 group">
-                        <div>
-                          <div className="flex items-center gap-4">
-                            <span className="text-3xl font-black min-w-[70px]">A-{patient.tokenNumber}</span>
-                            <span className="text-2xl font-bold uppercase flex items-center gap-3">
-                              {patient.name}
-                              <button 
-                                onClick={() => handleEdit(patient)} 
-                                className="text-gray-400 hover:text-black transition-colors"
-                                title="Edit Patient Details"
-                              >
-                                <Edit3 className="w-5 h-5" />
-                              </button>
-                            </span>
-                          </div>
-                          {patient.trackingId && (
-                            <p className="text-sm font-bold text-gray-500 mt-1 uppercase">ID: {patient.trackingId}</p>
-                          )}
-                        </div>
-                        
-                        <div className="flex items-center gap-6">
-                          <div className="text-right border-r-4 border-black pr-6">
-                            <p className="font-bold text-gray-500">Wait Time</p>
-                            <p className="text-xl font-black">~{Math.round((index + 1) * queueData.averageTime)} min</p>
-                          </div>
+            {/* Current Consultation Card */}
+            <div className="card p-6">
+              <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text-secondary)' }}>
+                Currently Serving
+              </p>
+              <div
+                className="rounded-lg p-6 text-center"
+                style={{ backgroundColor: 'var(--color-primary-light)' }}
+              >
+                <div
+                  className="text-5xl font-bold"
+                  style={{ color: 'var(--color-primary)' }}
+                >
+                  {queueData.activeToken === 0 ? '--' : `A-${queueData.activeToken}`}
+                </div>
+              </div>
+            </div>
 
-                          {/* Action Buttons: WhatsApp and Delete */}
-                          <div className="flex items-center gap-2">
-                            {patient.mobile ? (
-                              <a 
-                                href={`https://wa.me/${patient.mobile}?text=${encodeURIComponent(waMessage)}`}
-                                target="_blank" 
-                                rel="noreferrer"
-                                className="bg-[#25D366] border-4 border-black p-3 hover:bg-[#20b858] transition-colors group/wa"
-                                title="Send WhatsApp Update"
-                              >
-                                <MessageCircle className="w-6 h-6 text-white group-hover/wa:scale-110 transition-transform" />
-                              </a>
-                            ) : (
-                              <div className="bg-gray-300 border-4 border-black p-3 opacity-50 cursor-not-allowed">
-                                <MessageCircle className="w-6 h-6 text-gray-500" />
+            {/* Statistics Card */}
+            <div className="card p-6">
+              <p className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text-secondary)' }}>
+                Clinic Metrics
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    Avg Consultation
+                  </p>
+                  <p className="text-2xl font-bold" style={{ color: 'var(--color-secondary)' }}>
+                    {queueData.averageTime} min
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    Patients Waiting
+                  </p>
+                  <p className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>
+                    {queueData.waitingList.length}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column: Queue Management - 2 column span */}
+          <div className="lg:col-span-2">
+            <div className="card overflow-hidden flex flex-col" style={{ height: '100%' }}>
+              <div
+                className="px-6 py-4 flex items-center justify-between font-semibold"
+                style={{
+                  backgroundColor: 'var(--color-primary-light)',
+                  color: 'var(--color-primary)',
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <Users size={20} />
+                  Waiting Queue
+                </div>
+                <div
+                  className="px-3 py-1 rounded-full text-sm font-bold"
+                  style={{
+                    backgroundColor: 'var(--color-primary)',
+                    color: 'white',
+                  }}
+                >
+                  {queueData.waitingList.length}
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4">
+                {queueData.waitingList.length === 0 ? (
+                  <div className="text-center py-12" style={{ color: 'var(--color-text-secondary)' }}>
+                    <Users size={48} className="mx-auto mb-3 opacity-50" />
+                    <p className="text-lg font-semibold">No patients waiting</p>
+                  </div>
+                ) : (
+                  <ul className="space-y-3">
+                    {queueData.waitingList.map((patient, index) => {
+                      const trackingUrl = `http://${window.location.host}/track/${patient.trackingId || patient.tokenNumber}`;
+                      const waMessage = `Hello ${patient.name},\n\nYour token number is A-${patient.tokenNumber}.\n\nTrack your live queue status here:\n${trackingUrl}\n\n- PulseFlow Clinic`;
+
+                      return (
+                        <li
+                          key={patient._id}
+                          className="p-4 rounded-lg"
+                          style={{
+                            backgroundColor: index === 0 ? 'var(--color-primary-light)' : 'var(--color-surface)',
+                            border: index === 0 ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                          }}
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-1">
+                                <p className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>
+                                  A-{patient.tokenNumber}
+                                </p>
+                                {index === 0 && (
+                                  <div
+                                    className="px-2 py-1 rounded text-xs font-bold"
+                                    style={{
+                                      backgroundColor: 'var(--color-warning-light)',
+                                      color: 'var(--color-warning)',
+                                    }}
+                                  >
+                                    Next
+                                  </div>
+                                )}
                               </div>
-                            )}
-
-                            <button 
-                              onClick={() => handleDelete(patient._id)} 
-                              className="bg-[#ff4d4d] border-4 border-black p-3 hover:bg-[#ff3333] transition-colors group/del"
-                              title="Cancel Token"
-                            >
-                              <Trash2 className="w-6 h-6 text-white group-hover/del:scale-110 transition-transform" />
-                            </button>
-                          </div>
-
-                          {/* QR Code Generator */}
-                          <div className="text-center">
-                            <p className="font-bold text-xs uppercase mb-1">Scan</p>
-                            <div className="bg-white p-1 border-2 border-black inline-block">
-                              <QRCodeSVG 
-                                value={trackingUrl} 
-                                size={50} 
-                              />
+                              <p className="font-semibold" style={{ color: 'var(--color-text)' }}>
+                                {patient.name}
+                              </p>
+                              {patient.trackingId && (
+                                <p className="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
+                                  ID: {patient.trackingId}
+                                </p>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                                Est. Wait
+                              </p>
+                              <p className="font-bold" style={{ color: 'var(--color-secondary)' }}>
+                                ~{Math.round((index + 1) * queueData.averageTime)} min
+                              </p>
                             </div>
                           </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+
+                          {/* Actions Row */}
+                          <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--color-border)' }}>
+                            <div className="flex items-center gap-2">
+                              {patient.mobile ? (
+                                <a
+                                  href={`https://wa.me/${patient.mobile}?text=${encodeURIComponent(waMessage)}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex items-center justify-center w-8 h-8 rounded text-white transition-all hover:scale-110"
+                                  style={{ backgroundColor: '#25D366' }}
+                                  title="Send WhatsApp"
+                                >
+                                  <MessageCircle size={16} />
+                                </a>
+                              ) : (
+                                <div
+                                  className="flex items-center justify-center w-8 h-8 rounded opacity-50"
+                                  style={{ backgroundColor: 'var(--color-border)' }}
+                                  title="No mobile number"
+                                >
+                                  <MessageCircle size={16} style={{ color: 'var(--color-text-tertiary)' }} />
+                                </div>
+                              )}
+                              <button
+                                onClick={() => handleEdit(patient)}
+                                className="flex items-center justify-center w-8 h-8 rounded transition-all hover:scale-110"
+                                style={{
+                                  backgroundColor: 'var(--color-primary-light)',
+                                  color: 'var(--color-primary)',
+                                }}
+                                title="Edit patient"
+                              >
+                                <Edit3 size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(patient._id)}
+                                className="flex items-center justify-center w-8 h-8 rounded transition-all hover:scale-110 text-white"
+                                style={{ backgroundColor: 'var(--color-error)' }}
+                                title="Cancel token"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+
+                            {/* QR Code */}
+                            <div className="p-1 rounded" style={{ backgroundColor: 'var(--color-surface)' }}>
+                              <QRCodeSVG value={trackingUrl} size={40} />
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
             </div>
           </div>
-
         </div>
       </div>
     </div>

@@ -44,64 +44,112 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f4f4f0] flex flex-col items-center justify-center p-6 font-sans">
-      <div className="bg-white border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] p-12 max-w-md w-full text-center">
-        <Activity className="w-20 h-20 stroke-[3px] mx-auto mb-6" />
-        <h1 className="text-4xl font-black uppercase tracking-widest mb-2">PulseFlow</h1>
-        <p className="font-bold text-gray-500 uppercase tracking-widest mb-8 border-b-4 border-black pb-8">Staff Login</p>
+    <div className="min-h-screen bg-surface flex flex-col items-center justify-center p-4">
+      {/* Header */}
+      <div className="mb-8 text-center">
+        <div className="flex items-center justify-center gap-3 mb-3">
+          <div
+            className="w-12 h-12 rounded-lg flex items-center justify-center"
+            style={{ backgroundColor: 'var(--color-primary)' }}
+          >
+            <Activity size={28} className="text-white" />
+          </div>
+          <h1 className="text-3xl font-bold" style={{ color: 'var(--color-primary)' }}>
+            PulseFlow
+          </h1>
+        </div>
+      </div>
 
-        <form onSubmit={handleLogin} className="flex flex-col gap-6">
+      {/* Login Card */}
+      <div className="card w-full max-w-md p-8">
+        <h2 className="text-2xl font-bold text-center mb-2" style={{ color: 'var(--color-text)' }}>
+          Staff Sign In
+        </h2>
+        <p className="text-center mb-8" style={{ color: 'var(--color-text-secondary)' }}>
+          Access your clinic dashboard
+        </p>
+
+        <form onSubmit={handleLogin} className="flex flex-col gap-5">
           {/* Username Input */}
-          <div className="relative">
-            <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input 
-              type="text" 
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="USERNAME"
-              className="w-full bg-gray-100 border-4 border-black p-4 pl-12 text-xl font-bold placeholder-gray-400 focus:outline-none focus:bg-[#ffffb3] transition-colors"
-              required
-            />
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+              Username
+            </label>
+            <div className="relative">
+              <User size={18} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-tertiary)' }} />
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Enter your username"
+                className="w-full pl-10"
+                required
+              />
+            </div>
           </div>
 
           {/* Password Input */}
-          <div className="relative">
-            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input 
-              type="password" 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="PASSWORD"
-              className="w-full bg-gray-100 border-4 border-black p-4 pl-12 text-xl font-bold placeholder-gray-400 focus:outline-none focus:bg-[#ffffb3] transition-colors"
-              required
-            />
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+              Password
+            </label>
+            <div className="relative">
+              <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-tertiary)' }} />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                className="w-full pl-10"
+                required
+              />
+            </div>
           </div>
-          
+
           {/* Error Display */}
-          {error && <p className="text-[#ff4d4d] font-bold uppercase">{error}</p>}
+          {error && (
+            <div
+              className="p-3 rounded-md text-sm font-medium"
+              style={{
+                backgroundColor: 'var(--color-error-light)',
+                color: 'var(--color-error)',
+              }}
+            >
+              {error}
+            </div>
+          )}
 
           {/* Submit Button */}
-          <button 
+          <button
             type="submit"
             disabled={isLoading}
-            className={`border-4 border-black py-4 text-2xl font-black uppercase tracking-wider transition-colors
-              ${isLoading 
-                ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
-                : 'bg-black text-white hover:bg-gray-800'}`}
+            className="btn-primary w-full py-3 font-semibold text-base transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-2"
           >
-            {isLoading ? 'Authenticating...' : 'Secure Login'}
+            {isLoading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
-        <div className="mt-8 pt-6 border-t-4 border-black text-center">
-          <p className="font-bold text-gray-500 uppercase mb-4">New to PulseFlow?</p>
-          <button 
+
+        {/* Register Link */}
+        <div className="mt-8 pt-6 text-center" style={{ borderTop: '1px solid var(--color-border)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            New to PulseFlow?
+          </p>
+          <button
             onClick={() => navigate('/register')}
-            className="bg-transparent border-4 border-black py-3 px-6 text-xl font-black uppercase tracking-wider hover:bg-[#ffffb3] transition-colors w-full"
+            className="mt-3 text-base font-semibold transition-colors"
+            style={{ color: 'var(--color-primary)' }}
+            onMouseEnter={(e) => (e.target.style.opacity = '0.8')}
+            onMouseLeave={(e) => (e.target.style.opacity = '1')}
           >
-            Register Your Clinic
+            Create clinic account →
           </button>
         </div>
       </div>
+
+      {/* Footer */}
+      <p className="text-center mt-8 text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+        Questions? <a href="/" className="font-medium" style={{ color: 'var(--color-primary)' }}>Visit our homepage</a>
+      </p>
     </div>
   );
 }

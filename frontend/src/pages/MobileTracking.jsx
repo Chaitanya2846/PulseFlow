@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { socket } from '../socket';
-import { Clock, Activity, Bell } from 'lucide-react';
+import { Clock, Activity, Bell, CheckCircle } from 'lucide-react';
 
 export default function MobileTracking() {
   // We grab the trackingId (e.g., PF-8342) directly from the URL
@@ -42,8 +42,44 @@ export default function MobileTracking() {
   }, [trackingId]);
 
   // Loading & Error States
-  if (error) return <div className="p-10 font-black text-center text-red-500 uppercase text-2xl mt-20">{error}</div>;
-  if (!trackingData) return <div className="p-10 font-black text-center animate-pulse uppercase text-2xl mt-20">Loading Status...</div>;
+  if (error) {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center p-4">
+        <div className="card w-full max-w-sm p-8 text-center">
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
+            style={{ backgroundColor: 'var(--color-error-light)' }}
+          >
+            <Activity size={32} style={{ color: 'var(--color-error)' }} />
+          </div>
+          <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--color-text)' }}>
+            Unable to Load
+          </h2>
+          <p style={{ color: 'var(--color-text-secondary)' }}>
+            {error}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!trackingData) {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center p-4">
+        <div className="card w-full max-w-sm p-8 text-center">
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse"
+            style={{ backgroundColor: 'var(--color-primary-light)' }}
+          >
+            <Activity size={32} style={{ color: 'var(--color-primary)' }} />
+          </div>
+          <p style={{ color: 'var(--color-text-secondary)' }}>
+            Loading your status...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // Destructure the data coming from our new backend API
   const { patient, clinic, peopleAhead } = trackingData;
@@ -55,53 +91,126 @@ export default function MobileTracking() {
   // SCENARIO 1: CONSULTATION COMPLETE
   if (isCompleted) {
     return (
-      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-8 text-center font-sans">
-        <h1 className="text-4xl font-black uppercase mb-4">Turn Completed</h1>
-        <p className="text-xl text-gray-400 font-bold">Your consultation is over. Thank you for visiting {clinic.name}.</p>
+      <div className="min-h-screen bg-surface flex items-center justify-center p-4">
+        <div className="card w-full max-w-sm p-8 text-center">
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
+            style={{ backgroundColor: 'var(--color-success-light)' }}
+          >
+            <CheckCircle size={32} style={{ color: 'var(--color-success)' }} />
+          </div>
+          <h2 className="text-3xl font-bold mb-2" style={{ color: 'var(--color-text)' }}>
+            Complete!
+          </h2>
+          <p className="mb-4" style={{ color: 'var(--color-text-secondary)' }}>
+            Your consultation with {clinic.name} is complete. Thank you for visiting!
+          </p>
+          <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+            Feel free to close this page.
+          </p>
+        </div>
       </div>
     );
   }
 
   // SCENARIO 2: WAITING OR SERVING
   return (
-    <div className="min-h-screen bg-[#f4f4f0] p-6 font-sans flex flex-col max-w-md mx-auto shadow-2xl relative">
-      <header className="flex justify-between items-center border-b-4 border-black pb-4 mb-8">
-        <h1 className="text-2xl font-black tracking-tighter flex items-center gap-2 uppercase">
-          <Activity className="stroke-[3px]" /> PulseFlow
-        </h1>
-        <span className="bg-black text-white px-3 py-1 font-bold text-sm uppercase">Live Tracker</span>
-      </header>
+    <div className="min-h-screen bg-surface p-4 flex flex-col max-w-md mx-auto">
+      {/* Header */}
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-2">
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center"
+            style={{ backgroundColor: 'var(--color-primary)' }}
+          >
+            <Activity size={18} className="text-white" />
+          </div>
+          <h1 className="text-lg font-bold" style={{ color: 'var(--color-text)' }}>
+            PulseFlow
+          </h1>
+        </div>
+        <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+          {clinic.name}
+        </p>
+      </div>
 
       {isMyTurn ? (
-        <div className="bg-[#b3ffb3] border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] p-8 text-center animate-pulse">
-          <Bell className="w-16 h-16 mx-auto mb-4" />
-          <h2 className="text-4xl font-black uppercase tracking-widest mb-2">It's Your Turn!</h2>
-          <p className="text-xl font-bold uppercase border-t-4 border-black pt-4 mt-4">Please proceed to the doctor</p>
+        // Your Turn Alert
+        <div className="card p-8 text-center" style={{ backgroundColor: 'var(--color-success-light)', border: '2px solid var(--color-success)' }}>
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
+            style={{ backgroundColor: 'var(--color-success)' }}
+          >
+            <Bell size={32} className="text-white animate-bounce" />
+          </div>
+          <h2 className="text-3xl font-bold mb-2" style={{ color: 'var(--color-success)' }}>
+            It's Your Turn!
+          </h2>
+          <p className="text-lg font-semibold" style={{ color: 'var(--color-success)' }}>
+            Please proceed to the consultation room
+          </p>
         </div>
       ) : (
         <>
-          <div className="bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] p-8 text-center mb-8">
-            <p className="text-gray-500 font-bold uppercase tracking-widest mb-2">Your Token</p>
-            <div className="text-8xl font-black tracking-tighter">A-{patient.tokenNumber}</div>
-            <p className="text-sm font-bold text-gray-400 mt-2 uppercase">ID: {patient.trackingId}</p>
+          {/* Token Display */}
+          <div className="card p-8 text-center mb-6">
+            <p className="text-sm font-semibold mb-2" style={{ color: 'var(--color-text-secondary)' }}>
+              Your Token
+            </p>
+            <div
+              className="text-7xl font-bold mb-2"
+              style={{ color: 'var(--color-primary)' }}
+            >
+              A-{patient.tokenNumber}
+            </div>
+            <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+              ID: {patient.trackingId}
+            </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-[#ff4d4d] text-white border-4 border-black p-4 text-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-              <Clock className="w-8 h-8 mx-auto mb-2" />
-              <p className="font-bold uppercase text-sm">Est. Wait</p>
-              <p className="text-3xl font-black">~{Math.max(Math.round(estimatedWait), 0)}m</p>
+          {/* Queue Status Cards */}
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            {/* Estimated Wait */}
+            <div className="card p-4 text-center">
+              <Clock size={24} className="mx-auto mb-2" style={{ color: 'var(--color-secondary)' }} />
+              <p className="text-xs font-semibold mb-1" style={{ color: 'var(--color-text-secondary)' }}>
+                Est. Wait
+              </p>
+              <p className="text-2xl font-bold" style={{ color: 'var(--color-secondary)' }}>
+                ~{Math.max(Math.round(estimatedWait), 0)}m
+              </p>
             </div>
-            
-            <div className="bg-white border-4 border-black p-4 text-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-              <p className="font-bold uppercase text-gray-500 mb-1">Ahead of You</p>
-              <p className="text-5xl font-black">{peopleAhead}</p>
+
+            {/* People Ahead */}
+            <div className="card p-4 text-center">
+              <Activity size={24} className="mx-auto mb-2" style={{ color: 'var(--color-primary)' }} />
+              <p className="text-xs font-semibold mb-1" style={{ color: 'var(--color-text-secondary)' }}>
+                Ahead of You
+              </p>
+              <p className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>
+                {peopleAhead}
+              </p>
             </div>
           </div>
 
-          <div className="mt-8 bg-black text-white border-4 border-black p-6 text-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-            <p className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-1">Now Serving</p>
-            <p className="text-4xl font-black">A-{clinic.activeToken === 0 ? '--' : clinic.activeToken}</p>
+          {/* Now Serving */}
+          <div className="card p-6 text-center">
+            <p className="text-xs font-semibold mb-2" style={{ color: 'var(--color-text-secondary)' }}>
+              Now Serving
+            </p>
+            <p
+              className="text-5xl font-bold"
+              style={{ color: 'var(--color-primary)' }}
+            >
+              A-{clinic.activeToken === 0 ? '--' : clinic.activeToken}
+            </p>
+          </div>
+
+          {/* Info Footer */}
+          <div className="mt-6 pt-6" style={{ borderTop: '1px solid var(--color-border)' }}>
+            <p className="text-center text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+              Updates live every few seconds. Keep this page open for best experience.
+            </p>
           </div>
         </>
       )}
