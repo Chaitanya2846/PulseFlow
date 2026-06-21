@@ -33,8 +33,14 @@ app.use('/api/queue', queueRoutes);
 
 // Socket Listeners
 io.on('connection', (socket) => {
-  console.log(`[Socket] Connected: ${socket.id}`);
-  
+  console.log(`[Socket] New connection: ${socket.id}`);
+
+  // When any client connects, they must join their specific clinic's room
+  socket.on('join_clinic_room', (clinicId) => {
+    socket.join(clinicId);
+    console.log(`[Socket] Client ${socket.id} joined room: ${clinicId}`);
+  });
+
   socket.on('disconnect', () => {
     console.log(`[Socket] Disconnected: ${socket.id}`);
   });

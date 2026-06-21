@@ -1,130 +1,74 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { socket } from '../socket';
-import { Volume2, VolumeX, Clock, ArrowRight } from 'lucide-react';
+import { Activity } from 'lucide-react';
 
 export default function WaitingRoom() {
-  const [queueData, setQueueData] = useState({ activeToken: 0, averageTime: 10, waitingList: [] });
-  const [audioEnabled, setAudioEnabled] = useState(false);
-  const prevTokenRef = useRef(0);
+  const { clinicCode } = useParams(); // Grabs SC-7X4K92 from the URL
+  const [queueData, setQueueData] = useState(null);
+  const [error, setError] = useState('');
 
-  // 1. Fetch Initial State & Listen for Socket Events
   useEffect(() => {
-    fetch('http://localhost:5000/api/queue/state')
+    fetch(`http://${window.location.hostname}:5000/api/queue/public/${clinicCode}`)
       .then(res => res.json())
       .then(data => {
-        setQueueData(data);
-        prevTokenRef.current = data.activeToken;
-      });
+        if (data.message) {
+          setError(data.message);
+        } else {
+          setQueueData(data);
+          // Join the isolated room to receive live TV updates
+          socket.emit('join_clinic_room', data.clinicId);
+        }
+      })
+      .catch(err => setError('Connection failed'));
 
-    socket.on('queue_updated', (data) => {
-      setQueueData(data);
-    });
-
+    socket.on('queue_updated', (data) => setQueueData(prev => ({...prev, ...data})));
     return () => socket.off('queue_updated');
-  }, []);
+  }, [clinicCode]);
 
-  // 2. The WOW Feature: Voice Announcements
-  useEffect(() => {
-    if (audioEnabled && queueData.activeToken !== 0 && queueData.activeToken !== prevTokenRef.current) {
-      const announcement = new SpeechSynthesisUtterance(`Token number ${queueData.activeToken}, please proceed to the consultation room.`);
-      announcement.rate = 0.9; // Slightly slower for clarity
-      announcement.pitch = 1;
-      window.speechSynthesis.speak(announcement);
-      prevTokenRef.current = queueData.activeToken;
-    }
-  }, [queueData.activeToken, audioEnabled]);
+  if (error) return <div className="text-4xl font-black text-center mt-20 text-red-500">{error}</div>;
+  if (!queueData) return <div className="text-4xl font-black text-center mt-20">Loading Display...</div>;
 
-  // Audio unlock screen for browser policy
-  if (!audioEnabled) {
-    return (
-      <div className="min-h-screen bg-[#f4f4f0] flex flex-col items-center justify-center p-8">
-        <div className="bg-white border-4 border-black p-12 text-center shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] max-w-2xl">
-          <h1 className="text-5xl font-black mb-6 uppercase">TV Display Offline</h1>
-          <p className="text-xl font-bold text-gray-600 mb-8">
-            Browsers require user interaction before playing audio. Click below to initialize the TV display and enable voice announcements.
-          </p>
-          <button 
-            onClick={() => setAudioEnabled(true)}
-            className="bg-[#3399ff] border-4 border-black text-white px-12 py-6 text-3xl font-black uppercase tracking-wider hover:bg-[#1a8cff] transition-colors w-full"
-          >
-            Start Display
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const nextToken = queueData.waitingList.length > 0 ? queueData.waitingList[0].tokenNumber : '--';
 
   return (
-    <div className="min-h-screen bg-black text-white p-6 font-sans flex flex-col">
-      
-      {/* Header */}
-      <header className="flex justify-between items-center border-b-4 border-white pb-4 mb-6">
-        <h1 className="text-4xl font-black tracking-widest uppercase">PulseFlow Display</h1>
-        <div className="flex items-center gap-4 bg-white text-black px-4 py-2 border-2 border-white font-bold">
-          <Volume2 className="w-6 h-6" />
-          Audio Active
+    <div className="min-h-screen bg-black text-white p-8 font-sans flex flex-col">
+      <header className="flex justify-between items-center border-b-4 border-white pb-6 mb-12">
+        <h1 className="text-6xl font-black flex items-center gap-4">
+          <Activity className="w-16 h-16 stroke-[4px] text-[#ffe600]" />
+          {queueData.clinicName}
+        </h1>
+        <div className="text-3xl font-bold bg-white text-black px-6 py-3">
+          Est. Wait: {queueData.averageTime} min/patient
         </div>
       </header>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Left Side: Massive Active Token */}
-        <div className="lg:col-span-7 bg-[#b3ffb3] text-black border-4 border-white p-12 flex flex-col justify-center items-center text-center">
+      <div className="flex-1 grid grid-cols-2 gap-12">
+        {/* LEFT: Current Token */}
+        <div className="bg-[#b3ffb3] border-8 border-white p-12 flex flex-col items-center justify-center text-black">
           <h2 className="text-5xl font-black uppercase tracking-widest mb-8">Now Serving</h2>
           <div className="text-[15rem] leading-none font-black tracking-tighter">
-            {queueData.activeToken === 0 ? '--' : queueData.activeToken}
+            {queueData.activeToken === 0 ? '--' : `A-${queueData.activeToken}`}
           </div>
-          <p className="mt-8 text-3xl font-bold uppercase border-t-4 border-black pt-8 w-full">
-            Please proceed to doctor
-          </p>
         </div>
 
-        {/* Right Side: Up Next & Wait Times */}
-        <div className="lg:col-span-5 flex flex-col gap-6">
-          
-          <div className="bg-[#ff4d4d] border-4 border-white p-6">
-            <h2 className="text-3xl font-black uppercase tracking-widest flex items-center gap-3">
-              <Clock className="stroke-[3px]" />
-              Estimated Wait
-            </h2>
-            <p className="text-lg font-bold mt-2 uppercase">Based on live consultation averages</p>
-          </div>
-
-          <div className="flex-1 bg-[#f4f4f0] text-black border-4 border-white p-6 overflow-hidden flex flex-col">
-            <h3 className="text-3xl font-black uppercase mb-6 border-b-4 border-black pb-4">Up Next</h3>
-            
-            <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-              {queueData.waitingList.length === 0 ? (
-                <div className="text-3xl font-bold text-gray-500 text-center mt-12 uppercase">
-                  No Patients Waiting
-                </div>
-              ) : (
-                queueData.waitingList.slice(0, 5).map((patient, index) => (
-                  <div key={patient._id} className="flex justify-between items-center bg-white border-4 border-black p-4">
-                    <div className="flex items-center gap-4">
-                      <span className="text-4xl font-black">#{patient.tokenNumber}</span>
-                      <span className="text-2xl font-bold uppercase truncate max-w-[150px]">{patient.name}</span>
-                    </div>
-                    <div className="text-right flex flex-col items-end">
-                      <span className="bg-black text-white px-3 py-1 font-bold text-lg uppercase mb-1">
-                        Wait Time
-                      </span>
-                      <span className="text-3xl font-black">
-                        ~{Math.round((index + 1) * queueData.averageTime)}m
-                      </span>
-                    </div>
-                  </div>
-                ))
-              )}
+        {/* RIGHT: Up Next & Waiting */}
+        <div className="flex flex-col gap-12">
+          <div className="bg-[#3399ff] border-8 border-white p-12 flex flex-col items-center justify-center text-black">
+            <h2 className="text-4xl font-black uppercase tracking-widest mb-4">Up Next</h2>
+            <div className="text-8xl font-black tracking-tighter">
+              {nextToken !== '--' ? `A-${nextToken}` : '--'}
             </div>
-            
-            {queueData.waitingList.length > 5 && (
-              <div className="mt-4 pt-4 border-t-4 border-black text-center font-bold text-xl uppercase text-gray-600">
-                + {queueData.waitingList.length - 5} more waiting
-              </div>
-            )}
           </div>
-
+          
+          <div className="border-8 border-white p-8 flex-1">
+            <h3 className="text-3xl font-black uppercase border-b-4 border-white pb-4 mb-6">Waiting List</h3>
+            <ul className="grid grid-cols-2 gap-6 text-4xl font-bold">
+              {queueData.waitingList.slice(1, 7).map((patient) => (
+                <li key={patient._id}>A-{patient.tokenNumber}</li>
+              ))}
+            </ul>
+          </div>
         </div>
       </div>
     </div>
