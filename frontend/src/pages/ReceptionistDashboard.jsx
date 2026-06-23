@@ -2,15 +2,23 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { socket } from '../socket';
 import { QRCodeSVG } from 'qrcode.react';
-import { Users, UserPlus, Activity, MessageCircle, Trash2, Edit3, LogOut, Smartphone, RefreshCw, Clock, Monitor, Play, UserMinus, ShieldAlert } from 'lucide-react';
+// FIX: Added CheckCircle2 to the import list!
+import { Users, UserPlus, Activity, MessageCircle, Trash2, Edit3, LogOut, Smartphone, RefreshCw, Clock, Monitor, Play, UserMinus, ShieldAlert, Bell, X, ChevronDown, CheckCircle2 } from 'lucide-react';
 
 export default function ReceptionistDashboard() {
   const [queueData, setQueueData] = useState({ activeToken: 0, averageTime: 10, waitingList: [], skippedList: [], currentPatientCalledAt: null, isPaused: false, pauseReason: '' });
+  
   const [patientName, setPatientName] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
-  
-  // Priority state for triage
   const [priority, setPriority] = useState('Normal'); 
+  
+  // ==========================================
+  // NOTIFICATION CENTER STATE
+  // ==========================================
+  const [notifications, setNotifications] = useState([]);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [expandedNotifId, setExpandedNotifId] = useState(null);
   
   const [now, setNow] = useState(Date.now()); 
   const hasJoined = useRef(false);
@@ -37,12 +45,28 @@ export default function ReceptionistDashboard() {
       .then(setQueueData);
       
     socket.on('queue_updated', setQueueData);
-    return () => socket.off('queue_updated');
+
+    // LIVE SMS LISTENER
+    socket.on('notification_received', (newNotif) => {
+      setNotifications(prev => [newNotif, ...prev].slice(0, 50)); 
+      setUnreadCount(prev => prev + 1); // Trigger the red badge
+    });
+
+    return () => {
+      socket.off('queue_updated');
+      socket.off('notification_received');
+    };
   }, [clinicId]);
 
   const handleAddPatient = async (e) => {
     e.preventDefault();
     if (!patientName.trim()) return;
+
+    // STRICT 10-DIGIT VALIDATION GUARD
+    if (mobileNumber.length !== 10) {
+      alert("Please enter exactly 10 digits for the mobile number.");
+      return;
+    }
     
     try {
       const response = await fetch(`http://${window.location.hostname}:5000/api/queue/add`, {
@@ -56,7 +80,7 @@ export default function ReceptionistDashboard() {
       if (response.ok && data.patient) {
         setPatientName(''); 
         setMobileNumber('');
-        setPriority('Normal'); // Reset triage state
+        setPriority('Normal');
       } else {
         alert(data.message || "Error adding patient");
       }
@@ -65,11 +89,7 @@ export default function ReceptionistDashboard() {
     }
   };
 
-  // ==========================================
-  // WORKFLOW CONTROLS: Call, Skip, Recall
-  // ==========================================
   const handleCallNext = async () => {
-    // Front-end lock just in case
     if (queueData.isPaused) return alert("Queue is paused by the Doctor. Cannot call next.");
     
     try {
@@ -110,7 +130,6 @@ export default function ReceptionistDashboard() {
       console.error("Error recalling patient:", error);
     }
   };
-  // ==========================================
 
   const handleDelete = async (patientId) => {
     if (!window.confirm("Are you sure you want to cancel this token?")) return;
@@ -177,8 +196,93 @@ export default function ReceptionistDashboard() {
     navigate('/receptionist/login');
   };
 
+  // Toggles drawer and clears the unread badge
+  const toggleNotifDrawer = () => {
+    setIsNotifOpen(!isNotifOpen);
+    if (!isNotifOpen) setUnreadCount(0); 
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-12">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-12 overflow-x-hidden relative">
+      
+      {/* ========================================== */}
+      {/* NOTIFICATION DRAWER OVERLAY & PANEL */}
+      {/* ========================================== */}
+      {isNotifOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40 transition-opacity" 
+          onClick={() => setIsNotifOpen(false)} 
+        />
+      )}
+
+      <div className={`fixed top-0 right-0 h-full w-full sm:w-[420px] bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out flex flex-col ${isNotifOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50/50">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-blue-100 text-blue-600 rounded-xl"><Bell className="w-5 h-5" /></div>
+            <div>
+              <h2 className="text-lg font-black text-slate-800 tracking-tight">Notification Logs</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Mock SMS Gateway</p>
+            </div>
+          </div>
+          <button onClick={() => setIsNotifOpen(false)} className="p-2 text-slate-400 hover:text-slate-700 bg-white rounded-full border border-slate-200 shadow-sm transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 bg-slate-50">
+          {notifications.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-slate-400 text-center px-4">
+              <Smartphone className="w-12 h-12 mb-3 opacity-20" />
+              <p className="font-bold text-sm text-slate-500">System idle.</p>
+              <p className="text-xs text-slate-400 mt-1">Dispatched SMS alerts will securely stream here.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {notifications.map((notif) => (
+                <div key={notif.id} className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden transition-all duration-200">
+                  
+                  {/* Headline Item (Clickable) */}
+                  <div 
+                    onClick={() => setExpandedNotifId(expandedNotifId === notif.id ? null : notif.id)}
+                    className="p-4 cursor-pointer hover:bg-slate-50 flex justify-between items-start"
+                  >
+                    <div className="flex gap-3 items-start">
+                      <div className="bg-blue-50 text-blue-600 px-2.5 py-1 rounded-lg border border-blue-100 font-black text-xs mt-0.5">
+                        {notif.token}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                          {notif.type}
+                        </p>
+                        <p className="text-xs font-medium text-slate-500 mt-0.5">Sent to {notif.patientName}</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                        {new Date(notif.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <ChevronDown className={`w-4 h-4 text-slate-400 transform transition-transform ${expandedNotifId === notif.id ? 'rotate-180' : ''}`} />
+                    </div>
+                  </div>
+                  
+                  {/* Expanded Full Message Content */}
+                  {expandedNotifId === notif.id && (
+                    <div className="px-4 pb-4 pt-2 bg-slate-50 border-t border-slate-100">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Message Payload Generated</p>
+                      <div className="bg-slate-800 text-slate-300 font-mono text-[11px] p-3 rounded-xl leading-relaxed whitespace-pre-wrap shadow-inner">
+                        {notif.message}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      {/* ========================================== */}
+
       {/* Navbar */}
       <nav className="bg-white border-b border-slate-200 px-8 py-4 flex justify-between items-center sticky top-0 z-20 shadow-sm">
         <div className="flex items-center gap-3 text-indigo-600">
@@ -191,21 +295,35 @@ export default function ReceptionistDashboard() {
         <div className="flex items-center gap-3">
           <button 
             onClick={handleLaunchTV} 
-            className="flex items-center gap-2 bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 font-medium transition-colors px-4 py-2 rounded-lg"
+            className="hidden lg:flex items-center gap-2 bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 font-medium transition-colors px-4 py-2 rounded-lg"
           >
             <Monitor className="w-4 h-4" /> Open TV Display
           </button>  
           <button 
             onClick={handleResetSession} 
-            className="flex items-center gap-2 bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100 font-medium transition-colors px-4 py-2 rounded-lg"
+            className="hidden sm:flex items-center gap-2 bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100 font-medium transition-colors px-4 py-2 rounded-lg"
           >
             <RefreshCw className="w-4 h-4" /> New Session
           </button>
-          <div className="hidden md:flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600">
-            <Smartphone className="w-4 h-4 text-emerald-500" /> Mobile Sync Active
-          </div>
+          
+          {/* NOTIFICATION BELL ICON */}
+          <button 
+            onClick={toggleNotifDrawer} 
+            className="relative p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg border border-slate-200 transition-colors ml-2 shadow-sm"
+            title="View SMS Logs"
+          >
+            <Bell className="w-5 h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-black text-white ring-2 ring-white animate-bounce shadow-md">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+
+          <div className="w-px h-6 bg-slate-200 mx-1"></div>
+
           <button onClick={handleLogout} className="flex items-center gap-2 text-slate-500 hover:text-red-600 font-medium transition-colors px-4 py-2 rounded-lg hover:bg-red-50">
-            <LogOut className="w-5 h-5" /> Sign Out
+            <LogOut className="w-5 h-5" /> <span className="hidden sm:inline">Sign Out</span>
           </button>
         </div>
       </nav>
@@ -216,7 +334,6 @@ export default function ReceptionistDashboard() {
           {/* LEFT COLUMN: Actions & Stats */}
           <div className="lg:col-span-4 flex flex-col gap-6">
             
-            {/* Add Patient Form */}
             <form onSubmit={handleAddPatient} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 flex flex-col gap-4">
               <h2 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3 mb-2">New Patient Entry</h2>
               <div>
@@ -226,15 +343,23 @@ export default function ReceptionistDashboard() {
                   className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="Enter name"
                 />
               </div>
+              
+              {/* UPDATED STRICT MOBILE FIELD */}
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Mobile (Optional)</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Mobile (10 Digits)</label>
                 <input 
-                  type="text" value={mobileNumber} onChange={(e) => setMobileNumber(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="+1..."
+                  type="tel" 
+                  value={mobileNumber} 
+                  // Strip out letters/symbols automatically as they type
+                  onChange={(e) => setMobileNumber(e.target.value.replace(/\D/g, ''))} 
+                  required
+                  pattern="[0-9]{10}"
+                  maxLength="10"
+                  className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
+                  placeholder="e.g. 9876543210"
                 />
               </div>
               
-              {/* TRIAGE PRIORITY DROPDOWN */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Triage Priority</label>
                 <select 
@@ -252,13 +377,11 @@ export default function ReceptionistDashboard() {
               </button>
             </form>
 
-            {/* STRICT CONTROL: NOW SERVING & CALL NEXT - LOCKED IF PAUSED */}
             <div className={`rounded-2xl shadow-md p-6 text-white text-center relative overflow-hidden transition-colors duration-500 ${queueData.isPaused ? 'bg-gradient-to-br from-amber-500 to-amber-700' : 'bg-gradient-to-br from-emerald-500 to-emerald-700'}`}>
               <p className="text-white/80 text-sm font-bold uppercase tracking-widest mb-1">
                 {queueData.isPaused ? `PAUSED BY DOCTOR` : (queueData.activeToken !== 0 ? 'In Consultation' : 'Waiting on Reception')}
               </p>
               
-              {/* Show Pause Reason if paused, else show token */}
               {queueData.isPaused ? (
                 <div className="flex flex-col items-center justify-center h-24 mb-6">
                   <p className="text-xl font-bold tracking-tight text-white mb-2">Queue Frozen</p>
@@ -289,7 +412,6 @@ export default function ReceptionistDashboard() {
               </div>
             </div>
 
-            {/* Set Average Time */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 flex items-center justify-between group">
               <div>
                 <p className="font-bold text-slate-400 uppercase text-xs tracking-wider mb-1">Queue Pace</p>
@@ -310,7 +432,7 @@ export default function ReceptionistDashboard() {
             </div>
           </div>
 
-          {/* RIGHT COLUMN: Waiting and Recall Rosters */}
+          {/* RIGHT COLUMN: Rosters */}
           <div className="lg:col-span-8 flex flex-col gap-6 h-[750px]">
             
             {/* Section A: Active Waiting Roster */}
@@ -329,7 +451,6 @@ export default function ReceptionistDashboard() {
                 ) : (
                   <ul className="space-y-4">
                     {queueData.waitingList.map((patient, index) => {
-                      // LIVE ELAPSED MATH ENGINE
                       let estimatedWait = 0;
                       if (queueData.activeToken === 0) {
                         estimatedWait = index * queueData.averageTime;
@@ -347,7 +468,6 @@ export default function ReceptionistDashboard() {
 
                       return (
                         <li key={patient._id} className={`flex flex-col sm:flex-row sm:items-center justify-between border rounded-2xl p-5 hover:shadow-md transition-all group ${patient.priority === 'Emergency' ? 'bg-red-50/30 border-red-200' : 'bg-slate-50 border-slate-200 hover:bg-white'}`}>
-                          {/* Patient Info */}
                           <div className="flex items-center gap-5 mb-4 sm:mb-0">
                             <div className={`font-black text-2xl px-4 py-3 rounded-xl min-w-[70px] text-center shadow-inner ${patient.priority === 'Emergency' ? 'bg-red-100 text-red-700' : patient.priority === 'High' ? 'bg-orange-100 text-orange-700' : 'bg-indigo-100 text-indigo-700'}`}>
                               A-{patient.tokenNumber}
@@ -360,7 +480,6 @@ export default function ReceptionistDashboard() {
                                 </button>
                               </div>
                               
-                              {/* PRIORITY BADGES */}
                               <div className="flex gap-2 mt-1 items-center">
                                 {patient.trackingId && <p className="text-xs font-mono text-slate-500">ID: {patient.trackingId}</p>}
                                 {patient.priority === 'Emergency' && <span className="bg-red-100 text-red-700 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse border border-red-200">Emergency</span>}
@@ -369,7 +488,6 @@ export default function ReceptionistDashboard() {
                             </div>
                           </div>
                           
-                          {/* Actions & Stats */}
                           <div className="flex items-center gap-6 justify-between sm:justify-end">
                             <div className="text-right border-r border-slate-200 pr-6 hidden md:block">
                               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Est. Wait</p>

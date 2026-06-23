@@ -167,7 +167,7 @@ export const addPatient = async (req, res) => {
     await broadcastClinicState(req.io, clinicId);
 
     // ==========================================
-    // BULLMQ: Dispatch Registration SMS Job
+    // BULLMQ: Dispatch Registration SMS Job & MOCK NOTIFICATION
     // ==========================================
     if (mobile) {
       const frontendUrl = req.headers.origin || 'http://localhost:5173';
@@ -179,6 +179,16 @@ export const addPatient = async (req, res) => {
         phoneNumber: newPatient.mobile,
         tokenNumber: newPatient.tokenNumber,
         trackingLink: `${frontendUrl}/track/${newPatient.trackingId}`
+      });
+
+      // Emit mock notification for UI
+      req.io.to(clinicId.toString()).emit('notification_received', {
+        id: newPatient._id + '-reg',
+        token: `A-${newPatient.tokenNumber}`,
+        patientName: newPatient.name,
+        type: 'Registration SMS',
+        message: `Hello ${newPatient.name}, Your token number is A-${newPatient.tokenNumber}. Track live status at: ${frontendUrl}/track/${newPatient.trackingId}`,
+        timestamp: new Date()
       });
     }
 
@@ -316,6 +326,16 @@ export const callNext = async (req, res) => {
           tokenNumber: patientToAlert.tokenNumber,
           patientsAhead: 2
         });
+
+        // Emit mock notification for UI
+        req.io.to(clinicId.toString()).emit('notification_received', {
+          id: patientToAlert._id + '-turn',
+          token: `A-${patientToAlert.tokenNumber}`,
+          patientName: patientToAlert.name,
+          type: 'Turn Alert SMS',
+          message: `Hello ${patientToAlert.name}, you have exactly 2 patients ahead of you. Please step near the cabin.`,
+          timestamp: new Date()
+        });
       }
 
     } else {
@@ -351,6 +371,16 @@ export const skipPatient = async (req, res) => {
             patientId: currentPatient._id,
             phoneNumber: currentPatient.mobile,
             tokenNumber: currentPatient.tokenNumber
+          });
+
+          // Emit mock notification for UI
+          req.io.to(clinicId.toString()).emit('notification_received', {
+            id: currentPatient._id + '-skip',
+            token: `A-${currentPatient.tokenNumber}`,
+            patientName: currentPatient.name,
+            type: 'Absent Alert SMS',
+            message: `Token A-${currentPatient.tokenNumber} was called but you were absent. Your spot has been safely moved to the holding Recall Queue.`,
+            timestamp: new Date()
           });
         }
 
