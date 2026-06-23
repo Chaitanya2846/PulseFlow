@@ -2,13 +2,14 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { socket } from '../socket';
 import { QRCodeSVG } from 'qrcode.react';
-import { Users, UserPlus, Activity, QrCode, MessageCircle, Trash2, Edit3, LogOut, Smartphone, RefreshCw, Clock, Monitor } from 'lucide-react';
+import { Users, UserPlus, Activity, QrCode, MessageCircle, Trash2, Edit3, LogOut, Smartphone, RefreshCw, Clock, Monitor, Play, UserMinus, ShieldAlert } from 'lucide-react';
 
 export default function ReceptionistDashboard() {
-  const [queueData, setQueueData] = useState({ activeToken: 0, averageTime: 10, waitingList: [], currentPatientCalledAt: null });
+  // Added skippedList to initial state
+  const [queueData, setQueueData] = useState({ activeToken: 0, averageTime: 10, waitingList: [], skippedList: [], currentPatientCalledAt: null });
   const [patientName, setPatientName] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
-  const [now, setNow] = useState(Date.now()); // NEW: Live ticker for real-time countdown
+  const [now, setNow] = useState(Date.now()); 
   const hasJoined = useRef(false);
   const navigate = useNavigate();
 
@@ -18,7 +19,6 @@ export default function ReceptionistDashboard() {
     'Authorization': `Bearer ${localStorage.getItem('pulseflow_token')}`
   };
 
-  // Live Timer: Forces a UI recalculation every 10 seconds for wait times
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 10000);
     return () => clearInterval(interval);
@@ -51,20 +51,9 @@ export default function ReceptionistDashboard() {
       const data = await response.json();
 
       if (response.ok && data.patient) {
-        // === THE WHATSAPP AUTO-TRIGGER ===
-        if (mobileNumber.trim() !== '') {
-          // Clean the number
-          let cleanNumber = mobileNumber.replace(/\D/g, '');
-          // Auto-format for 10 digits
-          if (cleanNumber.length === 10) cleanNumber = `91${cleanNumber}`;
-          
-          const trackingUrl = `http://${window.location.host}/track/${data.patient.trackingId}`;
-          const waMessage = `Hello ${data.patient.name},\n\nYour Token Number is *A-${data.patient.tokenNumber}*.\n\nTrack your live queue status and estimated wait time here:\n${trackingUrl}\n\n- PulseFlow`;
-
-          // Pop open WhatsApp Web automatically
-          window.open(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(waMessage)}`, '_blank');
-        }
-
+        // WhatsApp Auto-Trigger has been REMOVED. 
+        // BullMQ is now handling SMS notifications asynchronously in the background.
+        
         setPatientName(''); 
         setMobileNumber('');
       } else {
@@ -74,6 +63,48 @@ export default function ReceptionistDashboard() {
       console.error("Error adding patient:", error);
     }
   };
+
+  // ==========================================
+  // WORKFLOW CONTROLS: Call, Skip, Recall
+  // ==========================================
+  const handleCallNext = async () => {
+    try {
+      const response = await fetch(`http://${window.location.hostname}:5000/api/queue/advance`, { 
+        method: 'PUT', headers: authHeaders 
+      });
+      const data = await response.json();
+      if (!response.ok) alert(data.message);
+    } catch (error) {
+      console.error("Error calling next:", error);
+    }
+  };
+
+  const handleSkipPatient = async () => {
+    if (!window.confirm(`Are you sure you want to mark token A-${queueData.activeToken} as a No-Show? This will clear the cabin.`)) return;
+    try {
+      await fetch(`http://${window.location.hostname}:5000/api/queue/skip`, { 
+        method: 'PUT', headers: authHeaders 
+      });
+    } catch (error) {
+      console.error("Error skipping patient:", error);
+    }
+  };
+
+  const handleRecall = async (patientId) => {
+    try {
+      const response = await fetch(`http://${window.location.hostname}:5000/api/queue/recall/${patientId}`, {
+        method: 'PUT',
+        headers: authHeaders
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        alert(data.message);
+      }
+    } catch (error) {
+      console.error("Error recalling patient:", error);
+    }
+  };
+  // ==========================================
 
   const handleDelete = async (patientId) => {
     if (!window.confirm("Are you sure you want to cancel this token?")) return;
@@ -201,15 +232,35 @@ export default function ReceptionistDashboard() {
               </button>
             </form>
 
-            {/* Now Serving Card */}
-            <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-2xl shadow-md p-8 text-white text-center relative overflow-hidden">
-              <div className="relative z-10">
-                <p className="text-emerald-50 text-sm font-bold uppercase tracking-widest mb-2">Doctor Is Serving</p>
-                <p className="text-7xl font-black tracking-tighter">{queueData.activeToken === 0 ? '--' : `A-${queueData.activeToken}`}</p>
+            {/* STRICT CONTROL: NOW SERVING & CALL NEXT */}
+            <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl shadow-md p-6 text-white text-center relative overflow-hidden">
+              <p className="text-emerald-100 text-sm font-bold uppercase tracking-widest mb-1">
+                Status: {queueData.activeToken !== 0 ? 'In Consultation' : 'Waiting on Reception'}
+              </p>
+              <p className="text-7xl font-black tracking-tighter mb-6">
+                {queueData.activeToken === 0 ? '--' : `A-${queueData.activeToken}`}
+              </p>
+              
+              <div className="space-y-3">
+                <button 
+                  onClick={handleCallNext}
+                  disabled={queueData.activeToken !== 0 || queueData.waitingList.length === 0}
+                  className="w-full bg-white text-emerald-700 font-bold py-4 rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Play className="w-5 h-5" /> Call Next
+                </button>
+
+                <button 
+                  onClick={handleSkipPatient}
+                  disabled={queueData.activeToken === 0}
+                  className="w-full bg-emerald-800/50 hover:bg-emerald-800 text-white font-bold py-3 rounded-xl transition-all flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <UserMinus className="w-4 h-4" /> Skip / No-Show
+                </button>
               </div>
             </div>
 
-            {/* HACKATHON REQUIREMENT: Set Average Time */}
+            {/* Set Average Time */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 flex items-center justify-between group">
               <div>
                 <p className="font-bold text-slate-400 uppercase text-xs tracking-wider mb-1">Queue Pace</p>
@@ -230,105 +281,137 @@ export default function ReceptionistDashboard() {
             </div>
           </div>
 
-          {/* RIGHT COLUMN: Queue Table */}
-          <div className="lg:col-span-8 bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden flex flex-col h-[700px]">
-            <div className="border-b border-slate-100 p-6 flex justify-between items-center bg-slate-50/50">
-              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Users className="w-5 h-5 text-indigo-500"/> Waiting Roster</h2>
-              <span className="bg-indigo-100 text-indigo-700 text-sm font-bold px-4 py-1.5 rounded-full">{queueData.waitingList.length} Waiting</span>
-            </div>
+          {/* RIGHT COLUMN: Waiting and Recall Rosters */}
+          <div className="lg:col-span-8 flex flex-col gap-6 h-[750px]">
+            
+            {/* Section A: Active Waiting Roster */}
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden flex flex-col flex-1 min-h-0">
+              <div className="border-b border-slate-100 p-5 flex justify-between items-center bg-slate-50/50">
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Users className="w-5 h-5 text-indigo-500"/> Waiting Roster</h2>
+                <span className="bg-indigo-100 text-indigo-700 text-sm font-bold px-4 py-1.5 rounded-full">{queueData.waitingList.length} Active</span>
+              </div>
 
-            <div className="overflow-y-auto flex-1 p-4">
-              {queueData.waitingList.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                  <Users className="w-16 h-16 mb-4 opacity-30" />
-                  <p className="text-lg font-medium">Queue is currently empty</p>
-                </div>
-              ) : (
-                <ul className="space-y-4">
-                  {queueData.waitingList.map((patient, index) => {
-                    
-                    // ========================================================
-                    // LIVE ELAPSED MATH ENGINE
-                    // ========================================================
-                    let estimatedWait = 0;
-                    if (queueData.activeToken === 0) {
-                      estimatedWait = index * queueData.averageTime;
-                    } else if (queueData.currentPatientCalledAt) {
-                      const elapsedMs = now - new Date(queueData.currentPatientCalledAt).getTime();
-                      const remainingCurrent = Math.max(queueData.averageTime - (elapsedMs / 60000), 1);
-                      estimatedWait = remainingCurrent + (index * queueData.averageTime);
-                    } else {
-                      estimatedWait = (index + 1) * queueData.averageTime;
-                    }
-                    const finalDisplayWait = Math.ceil(Math.max(estimatedWait, 0));
-                    // ========================================================
+              <div className="overflow-y-auto flex-1 p-4">
+                {queueData.waitingList.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                    <Users className="w-16 h-16 mb-4 opacity-30" />
+                    <p className="text-lg font-medium">Queue is currently empty</p>
+                  </div>
+                ) : (
+                  <ul className="space-y-4">
+                    {queueData.waitingList.map((patient, index) => {
+                      // LIVE ELAPSED MATH ENGINE
+                      let estimatedWait = 0;
+                      if (queueData.activeToken === 0) {
+                        estimatedWait = index * queueData.averageTime;
+                      } else if (queueData.currentPatientCalledAt) {
+                        const elapsedMs = now - new Date(queueData.currentPatientCalledAt).getTime();
+                        const remainingCurrent = Math.max(queueData.averageTime - (elapsedMs / 60000), 1);
+                        estimatedWait = remainingCurrent + (index * queueData.averageTime);
+                      } else {
+                        estimatedWait = (index + 1) * queueData.averageTime;
+                      }
+                      const finalDisplayWait = Math.ceil(Math.max(estimatedWait, 0));
 
-                    const trackingUrl = `http://${window.location.host}/track/${patient.trackingId || patient.tokenNumber}`;
-                    const waMessage = `Hello ${patient.name},\n\nYour token number is A-${patient.tokenNumber}.\n\nTrack your live queue status here:\n${trackingUrl}\n\n- PulseFlow Clinic`;
+                      const trackingUrl = `http://${window.location.host}/track/${patient.trackingId || patient.tokenNumber}`;
+                      const waMessage = `Hello ${patient.name},\n\nYour token number is A-${patient.tokenNumber}.\n\nTrack your live queue status here:\n${trackingUrl}\n\n- PulseFlow Clinic`;
 
-                    return (
-                      <li key={patient._id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50 border border-slate-200 rounded-2xl p-5 hover:bg-white hover:shadow-md transition-all group">
-                        
-                        {/* Patient Info */}
-                        <div className="flex items-center gap-5 mb-4 sm:mb-0">
-                          <div className="bg-indigo-100 text-indigo-700 font-black text-2xl px-4 py-3 rounded-xl min-w-[70px] text-center shadow-inner">
-                            A-{patient.tokenNumber}
+                      return (
+                        <li key={patient._id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50 border border-slate-200 rounded-2xl p-5 hover:bg-white hover:shadow-md transition-all group">
+                          {/* Patient Info */}
+                          <div className="flex items-center gap-5 mb-4 sm:mb-0">
+                            <div className="bg-indigo-100 text-indigo-700 font-black text-2xl px-4 py-3 rounded-xl min-w-[70px] text-center shadow-inner">
+                              A-{patient.tokenNumber}
+                            </div>
+                            <div>
+                              <div className="font-bold text-lg text-slate-900 flex items-center gap-2">
+                                {patient.name}
+                                <button onClick={() => handleEdit(patient)} className="text-slate-300 hover:text-indigo-600 transition-colors" title="Edit Patient Details">
+                                  <Edit3 className="w-4 h-4" />
+                                </button>
+                              </div>
+                              {patient.trackingId && <p className="text-xs font-mono text-slate-500 mt-1">ID: {patient.trackingId}</p>}
+                            </div>
                           </div>
-                          <div>
-                            <div className="font-bold text-lg text-slate-900 flex items-center gap-2">
-                              {patient.name}
-                              <button onClick={() => handleEdit(patient)} className="text-slate-300 hover:text-indigo-600 transition-colors" title="Edit Patient Details">
-                                <Edit3 className="w-4 h-4" />
+                          
+                          {/* Actions & Stats */}
+                          <div className="flex items-center gap-6 justify-between sm:justify-end">
+                            <div className="text-right border-r border-slate-200 pr-6 hidden md:block">
+                              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Est. Wait</p>
+                              <p className="text-lg font-bold text-slate-700 flex items-center justify-end gap-1">
+                                <Clock className="w-4 h-4 text-indigo-400 animate-pulse" /> ~{finalDisplayWait}m
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {patient.mobile ? (
+                                <a href={`https://wa.me/${patient.mobile}?text=${encodeURIComponent(waMessage)}`} target="_blank" rel="noreferrer" className="bg-emerald-50 text-emerald-600 border border-emerald-200 p-2.5 rounded-lg hover:bg-emerald-500 hover:text-white transition-all" title="Send WhatsApp">
+                                  <MessageCircle className="w-5 h-5" />
+                                </a>
+                              ) : (
+                                <div className="bg-slate-100 text-slate-300 border border-slate-200 p-2.5 rounded-lg cursor-not-allowed">
+                                  <MessageCircle className="w-5 h-5" />
+                                </div>
+                              )}
+                              <button onClick={() => handleDelete(patient._id)} className="bg-red-50 text-red-600 border border-red-200 p-2.5 rounded-lg hover:bg-red-500 hover:text-white transition-all" title="Cancel Token">
+                                <Trash2 className="w-5 h-5" />
                               </button>
                             </div>
-                            {patient.trackingId && <p className="text-xs font-mono text-slate-500 mt-1">ID: {patient.trackingId}</p>}
-                          </div>
-                        </div>
-                        
-                        {/* Actions & Stats */}
-                        <div className="flex items-center gap-6 justify-between sm:justify-end">
-                          
-                          {/* Live Wait Time */}
-                          <div className="text-right border-r border-slate-200 pr-6 hidden md:block">
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Est. Wait</p>
-                            <p className="text-lg font-bold text-slate-700 flex items-center justify-end gap-1">
-                              <Clock className="w-4 h-4 text-indigo-400 animate-pulse" /> ~{finalDisplayWait}m
-                            </p>
-                          </div>
 
-                          {/* Action Buttons */}
-                          <div className="flex items-center gap-2">
-                            {patient.mobile ? (
-                              <a href={`https://wa.me/${patient.mobile}?text=${encodeURIComponent(waMessage)}`} target="_blank" rel="noreferrer" className="bg-emerald-50 text-emerald-600 border border-emerald-200 p-2.5 rounded-lg hover:bg-emerald-500 hover:text-white transition-all" title="Send WhatsApp">
-                                <MessageCircle className="w-5 h-5" />
-                              </a>
-                            ) : (
-                              <div className="bg-slate-100 text-slate-300 border border-slate-200 p-2.5 rounded-lg cursor-not-allowed">
-                                <MessageCircle className="w-5 h-5" />
+                            <div className="text-center ml-2 hidden sm:block">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Scan to Track</p>
+                              <div className="bg-white p-1.5 border border-slate-200 rounded-lg shadow-sm">
+                                <QRCodeSVG value={trackingUrl} size={45} />
                               </div>
-                            )}
-                            <button onClick={() => handleDelete(patient._id)} className="bg-red-50 text-red-600 border border-red-200 p-2.5 rounded-lg hover:bg-red-500 hover:text-white transition-all" title="Cancel Token">
-                              <Trash2 className="w-5 h-5" />
-                            </button>
-                          </div>
-
-                          {/* Explicit QR Code */}
-                          <div className="text-center ml-2 hidden sm:block">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Scan to Track</p>
-                            <div className="bg-white p-1.5 border border-slate-200 rounded-lg shadow-sm">
-                              <QRCodeSVG value={trackingUrl} size={45} />
                             </div>
                           </div>
-
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
             </div>
-          </div>
 
+            {/* Section B: REAL-TIME RECALL BOARD */}
+            <div className="bg-white rounded-3xl shadow-sm border border-amber-200 overflow-hidden h-[240px] flex flex-col shrink-0">
+              <div className="border-b border-amber-200 p-4 flex justify-between items-center bg-amber-50">
+                <h2 className="text-md font-bold text-amber-800 flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-amber-500"/> Absent / Recall Holding Area
+                </h2>
+                <span className="bg-amber-200 text-amber-800 text-xs font-bold px-3 py-1 rounded-full">{queueData.skippedList?.length || 0} Skipped</span>
+              </div>
+
+              <div className="overflow-y-auto flex-1 p-4 bg-slate-50/50">
+                {!queueData.skippedList || queueData.skippedList.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                    <p className="text-sm font-medium">No skipped tokens on standby.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    {queueData.skippedList.map((patient) => (
+                      <div key={patient._id} className="bg-white border border-amber-200 rounded-2xl p-4 flex items-center justify-between shadow-sm border-l-4 border-l-amber-500">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-black text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md text-sm">A-{patient.tokenNumber}</span>
+                            <span className="font-bold text-slate-800 text-md truncate max-w-[150px]">{patient.name}</span>
+                          </div>
+                          <p className="text-[11px] font-semibold text-amber-600/80">Eligible for priority recall</p>
+                        </div>
+                        <button 
+                          onClick={() => handleRecall(patient._id)}
+                          className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95"
+                        >
+                          Recall Next
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
         </div>
       </div>
     </div>

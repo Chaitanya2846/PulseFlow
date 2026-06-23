@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { socket } from '../socket';
-import { Clock, Activity, Bell, CheckCircle2, Users } from 'lucide-react'; // Added Users import
+import { Clock, Activity, Bell, CheckCircle2, Users, ShieldAlert, XCircle } from 'lucide-react';
 
 export default function MobileTracking() {
   const { trackingId } = useParams(); 
   const [trackingData, setTrackingData] = useState(null);
   const [error, setError] = useState('');
-  const [now, setNow] = useState(Date.now()); // Live ticker
+  const [now, setNow] = useState(Date.now()); 
   const hasJoined = useRef(false);
 
   // 1. Live Ticker Engine: Forces a UI re-calculation every 10 seconds
@@ -23,6 +23,7 @@ export default function MobileTracking() {
         if (data.message) setError(data.message);
         else {
           setTrackingData(data);
+          // Only join the socket room once
           if (!hasJoined.current && data.clinic.clinicId) {
             socket.emit('join_clinic_room', data.clinic.clinicId);
             hasJoined.current = true;
@@ -33,15 +34,17 @@ export default function MobileTracking() {
 
   useEffect(() => {
     fetchTrackingData();
+    
+    // Listen for real-time queue shifts from the backend
     socket.on('queue_updated', (newData) => {
-      // Merge live socket updates into our state
       setTrackingData(prev => ({
         ...prev,
         clinic: { ...prev.clinic, activeToken: newData.activeToken, averageTime: newData.averageTime, currentPatientCalledAt: newData.currentPatientCalledAt },
       }));
-      // Re-fetch to recalculate 'peopleAhead' exactly
+      // Re-fetch to recalculate 'peopleAhead' and check if our specific status changed to 'cancelled'
       fetchTrackingData(); 
     });
+    
     return () => socket.off('queue_updated');
   }, [trackingId]);
 
@@ -50,32 +53,16 @@ export default function MobileTracking() {
 
   const { patient, clinic, peopleAhead } = trackingData;
 
-  // ========================================================
-  // THE MAGIC: REAL-TIME ELAPSED WAIT CALCULATION
-  // ========================================================
-  let estimatedWait = 0;
-  
-  if (clinic.activeToken === 0) {
-    // No one is in the cabin, so next patient goes in instantly.
-    estimatedWait = peopleAhead * clinic.averageTime;
-  } else {
-    // Someone is inside. Calculate how long they've been there.
-    const elapsedMs = now - new Date(clinic.currentPatientCalledAt).getTime();
-    const elapsedMins = elapsedMs / 60000;
-    
-    // Ensure the current patient has at least 1 minute remaining, even if they exceed the average.
-    const remainingForCurrentPatient = Math.max(clinic.averageTime - elapsedMins, 1);
-    
-    // Total wait = (Remaining time of person inside) + (Full avg time for everyone waiting ahead of me)
-    estimatedWait = remainingForCurrentPatient + (peopleAhead * clinic.averageTime);
-  }
-
-  // Use Math.ceil to always round up slightly (e.g. 12.2 mins -> 13 mins) so patients aren't surprised.
-  const finalDisplayWait = Math.ceil(Math.max(estimatedWait, 0));
-
   const isMyTurn = patient.status === 'serving';
   const isCompleted = patient.status === 'completed';
+  const isSkipped = patient.status === 'skipped';
+  const isCancelled = patient.status === 'cancelled';
 
+  // ========================================================
+  // TERMINAL VIEWS: Intercept state before doing any math
+  // ========================================================
+
+  // --- VIEW 1: COMPLETED ---
   if (isCompleted) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
@@ -86,6 +73,60 @@ export default function MobileTracking() {
     );
   }
 
+  // --- VIEW 2: CANCELLED (2nd Strike) ---
+  if (isCancelled) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-8 text-center text-white">
+        <div className="w-20 h-20 bg-red-500/20 border border-red-500 text-red-500 rounded-full flex items-center justify-center mb-6">
+          <XCircle className="w-10 h-10 stroke-[2.5px]" />
+        </div>
+        <h1 className="text-3xl font-black tracking-tight mb-2 text-red-400">Token Cancelled</h1>
+        <p className="text-slate-400 max-w-sm mb-8 text-md leading-relaxed">
+          You missed your recall turn. Your token <span className="text-white font-bold">A-{patient.tokenNumber}</span> has been permanently removed from the queue.
+        </p>
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 w-full max-w-xs shadow-inner">
+          <p className="text-sm font-semibold text-slate-200">Please visit the front desk to generate a new token.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // --- VIEW 3: SKIPPED / RECALL WARNING (1st Strike) ---
+  if (isSkipped) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-8 text-center text-white">
+        <div className="w-20 h-20 bg-amber-500/20 border border-amber-500 text-amber-500 rounded-full flex items-center justify-center mb-6 animate-bounce">
+          <ShieldAlert className="w-10 h-10 stroke-[2.5px]" />
+        </div>
+        <h1 className="text-3xl font-black tracking-tight mb-2 text-amber-400">Token Called but Absent</h1>
+        <p className="text-slate-400 max-w-sm mb-8 text-md leading-relaxed">
+          The clinic called token <span className="text-white font-bold">A-{patient.tokenNumber}</span>, but you were unavailable. Your position is saved inside the <span className="text-amber-400 font-semibold">Recall Queue</span>.
+        </p>
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 w-full max-w-xs shadow-inner">
+          <p className="text-xs uppercase font-bold text-slate-500 tracking-widest mb-1">Action Required</p>
+          <p className="text-sm font-semibold text-slate-200">Please report to the receptionist desk to re-activate your spot immediately.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ========================================================
+  // THE MAGIC: REAL-TIME ELAPSED WAIT CALCULATION
+  // ========================================================
+  let estimatedWait = 0;
+  
+  if (clinic.activeToken === 0) {
+    estimatedWait = peopleAhead * clinic.averageTime;
+  } else {
+    const elapsedMs = now - new Date(clinic.currentPatientCalledAt).getTime();
+    const elapsedMins = elapsedMs / 60000;
+    const remainingForCurrentPatient = Math.max(clinic.averageTime - elapsedMins, 1);
+    estimatedWait = remainingForCurrentPatient + (peopleAhead * clinic.averageTime);
+  }
+
+  const finalDisplayWait = Math.ceil(Math.max(estimatedWait, 0));
+
+  // --- VIEW 4: ACTIVE WAITING OR SERVING ---
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-12">
       <div className="bg-white px-6 py-4 shadow-sm border-b border-slate-100 flex justify-between items-center sticky top-0">

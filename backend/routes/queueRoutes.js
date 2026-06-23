@@ -10,7 +10,9 @@ import {
   getQueueState,
   updateAverageTime,
   trackPatient,
+  recallPatient,
   getPublicQueueState,
+  skipPatient,
   resetQueue,
   cancelPatient,
   editPatient
@@ -45,6 +47,8 @@ router.put('/edit/:patientId', verifyToken, editPatient);
 router.delete('/cancel/:patientId', verifyToken, cancelPatient); 
 router.post('/reset', verifyToken, resetQueue); 
 router.put('/settings/time', verifyToken, updateAverageTime);
+router.put('/skip', verifyToken, skipPatient);
+router.put('/recall/:patientId', verifyToken, recallPatient);
 
 // Doctor Actions
 router.put('/advance', verifyToken, callNext);              

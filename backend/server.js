@@ -6,6 +6,13 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import queueRoutes from './routes/queueRoutes.js';
 
+// ==========================================
+// NEW: BULLMQ WORKER & QUEUE IMPORTS
+// ==========================================
+// Importing the worker automatically starts it in the background thread
+import './workers/notificationWorker.js';
+import { notificationQueue } from './queues/notificationQueue.js';
+
 dotenv.config();
 
 const app = express();
@@ -31,6 +38,25 @@ app.use((req, res, next) => {
 
 // API Routes
 app.use('/api/queue', queueRoutes);
+
+// ==========================================
+// NEW: BULLMQ QUEUE MONITORING ENDPOINT
+// ==========================================
+// This allows you (or judges) to see background job processing in real-time
+app.get('/api/admin/queue-stats', async (req, res) => {
+  try {
+    const [waiting, active, completed, failed] = await Promise.all([
+      notificationQueue.getWaitingCount(),
+      notificationQueue.getActiveCount(),
+      notificationQueue.getCompletedCount(),
+      notificationQueue.getFailedCount()
+    ]);
+
+    res.status(200).json({ waiting, active, completed, failed });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch stats" });
+  }
+});
 
 // Socket Listeners
 io.on('connection', (socket) => {
