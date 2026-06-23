@@ -2,13 +2,16 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { socket } from '../socket';
 import { QRCodeSVG } from 'qrcode.react';
-import { Users, UserPlus, Activity, QrCode, MessageCircle, Trash2, Edit3, LogOut, Smartphone, RefreshCw, Clock, Monitor, Play, UserMinus, ShieldAlert } from 'lucide-react';
+import { Users, UserPlus, Activity, MessageCircle, Trash2, Edit3, LogOut, Smartphone, RefreshCw, Clock, Monitor, Play, UserMinus, ShieldAlert } from 'lucide-react';
 
 export default function ReceptionistDashboard() {
-  // Added skippedList to initial state
-  const [queueData, setQueueData] = useState({ activeToken: 0, averageTime: 10, waitingList: [], skippedList: [], currentPatientCalledAt: null });
+  const [queueData, setQueueData] = useState({ activeToken: 0, averageTime: 10, waitingList: [], skippedList: [], currentPatientCalledAt: null, isPaused: false, pauseReason: '' });
   const [patientName, setPatientName] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
+  
+  // Priority state for triage
+  const [priority, setPriority] = useState('Normal'); 
+  
   const [now, setNow] = useState(Date.now()); 
   const hasJoined = useRef(false);
   const navigate = useNavigate();
@@ -45,17 +48,15 @@ export default function ReceptionistDashboard() {
       const response = await fetch(`http://${window.location.hostname}:5000/api/queue/add`, {
         method: 'POST', 
         headers: authHeaders,
-        body: JSON.stringify({ name: patientName, mobile: mobileNumber, priority: 'Normal' })
+        body: JSON.stringify({ name: patientName, mobile: mobileNumber, priority: priority })
       });
       
       const data = await response.json();
 
       if (response.ok && data.patient) {
-        // WhatsApp Auto-Trigger has been REMOVED. 
-        // BullMQ is now handling SMS notifications asynchronously in the background.
-        
         setPatientName(''); 
         setMobileNumber('');
+        setPriority('Normal'); // Reset triage state
       } else {
         alert(data.message || "Error adding patient");
       }
@@ -68,6 +69,9 @@ export default function ReceptionistDashboard() {
   // WORKFLOW CONTROLS: Call, Skip, Recall
   // ==========================================
   const handleCallNext = async () => {
+    // Front-end lock just in case
+    if (queueData.isPaused) return alert("Queue is paused by the Doctor. Cannot call next.");
+    
     try {
       const response = await fetch(`http://${window.location.hostname}:5000/api/queue/advance`, { 
         method: 'PUT', headers: authHeaders 
@@ -80,7 +84,9 @@ export default function ReceptionistDashboard() {
   };
 
   const handleSkipPatient = async () => {
-    if (!window.confirm(`Are you sure you want to mark token A-${queueData.activeToken} as a No-Show? This will clear the cabin.`)) return;
+    if (queueData.isPaused) return alert("Queue is paused. Cannot skip patient.");
+    if (!window.confirm(`Are you sure you want to mark token A-${queueData.activeToken} as a No-Show?`)) return;
+
     try {
       await fetch(`http://${window.location.hostname}:5000/api/queue/skip`, { 
         method: 'PUT', headers: authHeaders 
@@ -227,24 +233,47 @@ export default function ReceptionistDashboard() {
                   className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="+1..."
                 />
               </div>
+              
+              {/* TRIAGE PRIORITY DROPDOWN */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Triage Priority</label>
+                <select 
+                  value={priority} onChange={(e) => setPriority(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all font-semibold text-slate-700"
+                >
+                  <option value="Normal">🟢 Normal (Routine)</option>
+                  <option value="High">🟠 High (Urgent)</option>
+                  <option value="Emergency">🔴 Emergency (Immediate)</option>
+                </select>
+              </div>
+
               <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl shadow-md shadow-indigo-600/20 transition-all flex justify-center items-center gap-2 mt-2">
                 <UserPlus className="w-5 h-5" /> Add to Queue
               </button>
             </form>
 
-            {/* STRICT CONTROL: NOW SERVING & CALL NEXT */}
-            <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-2xl shadow-md p-6 text-white text-center relative overflow-hidden">
-              <p className="text-emerald-100 text-sm font-bold uppercase tracking-widest mb-1">
-                Status: {queueData.activeToken !== 0 ? 'In Consultation' : 'Waiting on Reception'}
+            {/* STRICT CONTROL: NOW SERVING & CALL NEXT - LOCKED IF PAUSED */}
+            <div className={`rounded-2xl shadow-md p-6 text-white text-center relative overflow-hidden transition-colors duration-500 ${queueData.isPaused ? 'bg-gradient-to-br from-amber-500 to-amber-700' : 'bg-gradient-to-br from-emerald-500 to-emerald-700'}`}>
+              <p className="text-white/80 text-sm font-bold uppercase tracking-widest mb-1">
+                {queueData.isPaused ? `PAUSED BY DOCTOR` : (queueData.activeToken !== 0 ? 'In Consultation' : 'Waiting on Reception')}
               </p>
-              <p className="text-7xl font-black tracking-tighter mb-6">
-                {queueData.activeToken === 0 ? '--' : `A-${queueData.activeToken}`}
-              </p>
+              
+              {/* Show Pause Reason if paused, else show token */}
+              {queueData.isPaused ? (
+                <div className="flex flex-col items-center justify-center h-24 mb-6">
+                  <p className="text-xl font-bold tracking-tight text-white mb-2">Queue Frozen</p>
+                  <p className="text-sm text-amber-100">{queueData.pauseReason || 'Doctor unavailable'}</p>
+                </div>
+              ) : (
+                <p className="text-7xl font-black tracking-tighter mb-6 h-24 flex items-center justify-center">
+                  {queueData.activeToken === 0 ? '--' : `A-${queueData.activeToken}`}
+                </p>
+              )}
               
               <div className="space-y-3">
                 <button 
                   onClick={handleCallNext}
-                  disabled={queueData.activeToken !== 0 || queueData.waitingList.length === 0}
+                  disabled={queueData.activeToken !== 0 || queueData.waitingList.length === 0 || queueData.isPaused}
                   className="w-full bg-white text-emerald-700 font-bold py-4 rounded-xl shadow-lg transition-all flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Play className="w-5 h-5" /> Call Next
@@ -252,8 +281,8 @@ export default function ReceptionistDashboard() {
 
                 <button 
                   onClick={handleSkipPatient}
-                  disabled={queueData.activeToken === 0}
-                  className="w-full bg-emerald-800/50 hover:bg-emerald-800 text-white font-bold py-3 rounded-xl transition-all flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={queueData.activeToken === 0 || queueData.isPaused}
+                  className="w-full bg-black/20 hover:bg-black/30 text-white font-bold py-3 rounded-xl transition-all flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <UserMinus className="w-4 h-4" /> Skip / No-Show
                 </button>
@@ -317,10 +346,10 @@ export default function ReceptionistDashboard() {
                       const waMessage = `Hello ${patient.name},\n\nYour token number is A-${patient.tokenNumber}.\n\nTrack your live queue status here:\n${trackingUrl}\n\n- PulseFlow Clinic`;
 
                       return (
-                        <li key={patient._id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50 border border-slate-200 rounded-2xl p-5 hover:bg-white hover:shadow-md transition-all group">
+                        <li key={patient._id} className={`flex flex-col sm:flex-row sm:items-center justify-between border rounded-2xl p-5 hover:shadow-md transition-all group ${patient.priority === 'Emergency' ? 'bg-red-50/30 border-red-200' : 'bg-slate-50 border-slate-200 hover:bg-white'}`}>
                           {/* Patient Info */}
                           <div className="flex items-center gap-5 mb-4 sm:mb-0">
-                            <div className="bg-indigo-100 text-indigo-700 font-black text-2xl px-4 py-3 rounded-xl min-w-[70px] text-center shadow-inner">
+                            <div className={`font-black text-2xl px-4 py-3 rounded-xl min-w-[70px] text-center shadow-inner ${patient.priority === 'Emergency' ? 'bg-red-100 text-red-700' : patient.priority === 'High' ? 'bg-orange-100 text-orange-700' : 'bg-indigo-100 text-indigo-700'}`}>
                               A-{patient.tokenNumber}
                             </div>
                             <div>
@@ -330,7 +359,13 @@ export default function ReceptionistDashboard() {
                                   <Edit3 className="w-4 h-4" />
                                 </button>
                               </div>
-                              {patient.trackingId && <p className="text-xs font-mono text-slate-500 mt-1">ID: {patient.trackingId}</p>}
+                              
+                              {/* PRIORITY BADGES */}
+                              <div className="flex gap-2 mt-1 items-center">
+                                {patient.trackingId && <p className="text-xs font-mono text-slate-500">ID: {patient.trackingId}</p>}
+                                {patient.priority === 'Emergency' && <span className="bg-red-100 text-red-700 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse border border-red-200">Emergency</span>}
+                                {patient.priority === 'High' && <span className="bg-orange-100 text-orange-700 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider border border-orange-200">High</span>}
+                              </div>
                             </div>
                           </div>
                           

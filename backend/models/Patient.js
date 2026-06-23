@@ -6,9 +6,17 @@ const patientSchema = new mongoose.Schema({
   trackingId: { type: String, required: true, unique: true }, // The PF-8342 code
   name: { type: String, required: true },
   mobile: { type: String }, 
-  status: { type: String, enum: ['waiting', 'serving', 'completed', 'skipped','cancelled'], default: 'waiting' },
   
-  // NEW: Tracks how many times this patient was unavailable when called
+  // NEW: Priority field for the Triage Engine
+  priority: { 
+    type: String, 
+    enum: ['Normal', 'High', 'Emergency'], 
+    default: 'Normal' 
+  },
+  
+  status: { type: String, enum: ['waiting', 'serving', 'completed', 'skipped', 'cancelled'], default: 'waiting' },
+  
+  // Tracks how many times this patient was unavailable when called
   skipCount: { type: Number, default: 0 }, 
   
   joinedAt: { type: Date, default: Date.now },

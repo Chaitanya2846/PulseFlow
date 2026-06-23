@@ -4,8 +4,28 @@ import Patient from '../models/Patient.js';
 import Clinic from '../models/Clinic.js';
 import User from '../models/User.js';
 import { notificationQueue } from '../queues/notificationQueue.js';
+import mongoose from 'mongoose';
 
 const SECRET_KEY = process.env.JWT_SECRET || "pulseflow_super_secret_key_2026";
+
+const getSortedWaitingList = async (clinicId) => {
+  return await Patient.aggregate([
+    { $match: { clinicId: new mongoose.Types.ObjectId(clinicId), status: 'waiting' } },
+    { $addFields: {
+        priorityWeight: {
+          $switch: {
+            branches: [
+              { case: { $eq: ['$priority', 'Emergency'] }, then: 1 },
+              { case: { $eq: ['$priority', 'High'] }, then: 2 },
+              { case: { $eq: ['$priority', 'Normal'] }, then: 3 }
+            ],
+            default: 3
+          }
+        }
+    }},
+    { $sort: { priorityWeight: 1, joinedAt: 1 } } // Sort by Priority FIRST, then by Arrival Time
+  ]);
+};
 
 // ==========================================
 // 1. HELPER: SOCKET.IO BROADCASTER
@@ -16,9 +36,7 @@ export const broadcastClinicState = async (io, clinicId) => {
     if (!clinic) return;
 
     // Fetch active waiting list
-    const waitingList = await Patient.find({ clinicId, status: 'waiting' })
-      .sort({ joinedAt: 1 })
-      .lean();
+    const waitingList = await getSortedWaitingList(clinicId);
 
     // Fetch active skipped list for the receptionist's recall panel
     const skippedList = await Patient.find({ clinicId, status: 'skipped' })
@@ -30,6 +48,8 @@ export const broadcastClinicState = async (io, clinicId) => {
       activeToken: clinic.currentToken,
       averageTime: clinic.avgConsultationTime, 
       currentPatientCalledAt: clinic.currentPatientCalledAt, 
+      isPaused: clinic.isPaused,        
+      pauseReason: clinic.pauseReason,  
       waitingList,
       skippedList // Broadcasted instantly to sync front-desk panel
     });
@@ -150,8 +170,6 @@ export const addPatient = async (req, res) => {
     // BULLMQ: Dispatch Registration SMS Job
     // ==========================================
     if (mobile) {
-      // FIX: Dynamically grab the frontend URL (e.g., http://localhost:5173) 
-      // instead of the backend host (localhost:5000).
       const frontendUrl = req.headers.origin || 'http://localhost:5173';
 
       await notificationQueue.add('send-registration-sms', {
@@ -160,7 +178,7 @@ export const addPatient = async (req, res) => {
         patientName: newPatient.name,
         phoneNumber: newPatient.mobile,
         tokenNumber: newPatient.tokenNumber,
-        trackingLink: `${frontendUrl}/track/${newPatient.trackingId}` // Applied the fix here
+        trackingLink: `${frontendUrl}/track/${newPatient.trackingId}`
       });
     }
 
@@ -209,7 +227,6 @@ export const resetQueue = async (req, res) => {
       await clinic.save();
     }
 
-    // FIX: Include 'cancelled' so they don't pile up in the database across sessions
     await Patient.deleteMany({ clinicId, status: { $in: ['waiting', 'serving', 'skipped', 'cancelled'] } });
 
     await broadcastClinicState(req.io, clinicId);
@@ -239,6 +256,22 @@ export const updateAverageTime = async (req, res) => {
   }
 };
 
+export const togglePauseQueue = async (req, res) => {
+  try {
+    const clinic = await Clinic.findById(req.user.clinicId);
+    if (!clinic) return res.status(404).json({ message: "Clinic not found" });
+
+    clinic.isPaused = !clinic.isPaused;
+    clinic.pauseReason = clinic.isPaused ? (req.body.reason || 'Doctor on break') : '';
+    await clinic.save();
+
+    await broadcastClinicState(req.io, clinic._id);
+    res.status(200).json({ success: true, isPaused: clinic.isPaused });
+  } catch (error) {
+    res.status(500).json({ message: "Error toggling pause" });
+  }
+};
+
 // ==========================================
 // 4. WORKFLOW ENGINE (Role-Based Strict Control)
 // ==========================================
@@ -251,9 +284,15 @@ export const callNext = async (req, res) => {
     const clinicId = req.user.clinicId; 
     const clinic = await Clinic.findById(clinicId);
 
+    // GUARDRAIL: Prevent calling next if queue is paused
+    if (clinic.isPaused) {
+      return res.status(400).json({ message: "Queue is paused. Resume to call next." });
+    }
+
     if (clinic.currentToken !== 0) return res.status(400).json({ message: "Consultation in progress." });
 
-    const nextPatient = await Patient.findOne({ clinicId, status: 'waiting' }).sort({ joinedAt: 1 });
+    const sortedList = await getSortedWaitingList(clinicId);
+    const nextPatient = sortedList.length > 0 ? await Patient.findById(sortedList[0]._id) : null;
     
     if (nextPatient) {
       nextPatient.status = 'serving';
@@ -267,7 +306,6 @@ export const callNext = async (req, res) => {
       // ==========================================
       // BULLMQ: Turn Alert (2 Patients Ahead)
       // ==========================================
-      // Find the patient at index 2 of the waiting list (which means there are 2 people ahead of them)
       const patientToAlert = await Patient.findOne({ clinicId, status: 'waiting' }).sort({ joinedAt: 1 }).skip(2);
       
       if (patientToAlert && patientToAlert.mobile) {
@@ -409,7 +447,7 @@ export const getQueueState = async (req, res) => {
     if (!clinicId) return res.status(400).json({ message: "Clinic ID required" });
 
     const clinic = await Clinic.findById(clinicId);
-    const waitingList = await Patient.find({ clinicId, status: 'waiting' }).sort({ joinedAt: 1 });
+    const waitingList = await getSortedWaitingList(clinic._id);
     const skippedList = await Patient.find({ clinicId, status: 'skipped' }).sort({ joinedAt: 1 });
     
     res.status(200).json({
@@ -417,6 +455,8 @@ export const getQueueState = async (req, res) => {
       activeToken: clinic ? clinic.currentToken : 0,
       averageTime: clinic ? clinic.avgConsultationTime : 10, 
       currentPatientCalledAt: clinic ? clinic.currentPatientCalledAt : null, 
+      isPaused: clinic ? clinic.isPaused : false,
+      pauseReason: clinic ? clinic.pauseReason : '',
       waitingList,
       skippedList
     });
@@ -432,7 +472,7 @@ export const getPublicQueueState = async (req, res) => {
     
     if (!clinic) return res.status(404).json({ message: "Invalid Clinic Code" });
 
-    const waitingList = await Patient.find({ clinicId: clinic._id, status: 'waiting' }).sort({ joinedAt: 1 });
+    const waitingList = await getSortedWaitingList(clinic._id);
     const skippedList = await Patient.find({ clinicId: clinic._id, status: 'skipped' }).sort({ joinedAt: 1 });
     
     res.status(200).json({
@@ -441,6 +481,8 @@ export const getPublicQueueState = async (req, res) => {
       activeToken: clinic.currentToken,
       averageTime: clinic.avgConsultationTime, 
       currentPatientCalledAt: clinic.currentPatientCalledAt, 
+      isPaused: clinic.isPaused,
+      pauseReason: clinic.pauseReason,
       waitingList,
       skippedList
     });
@@ -458,11 +500,12 @@ export const trackPatient = async (req, res) => {
 
     const clinic = await Clinic.findById(patient.clinicId);
     
-    const peopleAhead = await Patient.countDocuments({
-      clinicId: patient.clinicId,
-      status: 'waiting',
-      joinedAt: { $lt: patient.joinedAt } 
-    });
+    let peopleAhead = 0;
+    if (patient.status === 'waiting') {
+      const sortedList = await getSortedWaitingList(patient.clinicId);
+      const index = sortedList.findIndex(p => p._id.toString() === patient._id.toString());
+      peopleAhead = index !== -1 ? index : 0; 
+    }
 
     res.status(200).json({
       patient,
@@ -471,6 +514,8 @@ export const trackPatient = async (req, res) => {
         activeToken: clinic.currentToken,
         averageTime: clinic.avgConsultationTime, 
         currentPatientCalledAt: clinic.currentPatientCalledAt, 
+        isPaused: clinic.isPaused,        
+        pauseReason: clinic.pauseReason,  
         clinicId: clinic._id
       },
       peopleAhead

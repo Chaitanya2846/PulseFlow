@@ -7,7 +7,11 @@ const clinicSchema = new mongoose.Schema({
   highestToken: { type: Number, default: 0 },
   avgConsultationTime: { type: Number, default: 10 },
   currentPatientCalledAt: { type: Date, default: null },
-  lastUpdated: { type: Date, default: Date.now }
+  lastUpdated: { type: Date, default: Date.now },
+  
+  // NEW: Doctor Break / Pause State
+  isPaused: { type: Boolean, default: false },
+  pauseReason: { type: String, default: '' }
 });
 
 export default mongoose.model('Clinic', clinicSchema);

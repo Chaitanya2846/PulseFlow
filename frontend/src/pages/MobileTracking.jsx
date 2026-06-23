@@ -39,7 +39,14 @@ export default function MobileTracking() {
     socket.on('queue_updated', (newData) => {
       setTrackingData(prev => ({
         ...prev,
-        clinic: { ...prev.clinic, activeToken: newData.activeToken, averageTime: newData.averageTime, currentPatientCalledAt: newData.currentPatientCalledAt },
+        clinic: { 
+          ...prev.clinic, 
+          activeToken: newData.activeToken, 
+          averageTime: newData.averageTime, 
+          currentPatientCalledAt: newData.currentPatientCalledAt,
+          isPaused: newData.isPaused,       // Catch pause state
+          pauseReason: newData.pauseReason  // Catch pause reason
+        },
       }));
       // Re-fetch to recalculate 'peopleAhead' and check if our specific status changed to 'cancelled'
       fetchTrackingData(); 
@@ -129,7 +136,7 @@ export default function MobileTracking() {
   // --- VIEW 4: ACTIVE WAITING OR SERVING ---
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-12">
-      <div className="bg-white px-6 py-4 shadow-sm border-b border-slate-100 flex justify-between items-center sticky top-0">
+      <div className="bg-white px-6 py-4 shadow-sm border-b border-slate-100 flex justify-between items-center sticky top-0 z-10">
         <div className="flex items-center gap-2 text-blue-600">
           <Activity className="w-6 h-6" />
           <span className="font-bold text-lg">PulseFlow Tracker</span>
@@ -143,6 +150,33 @@ export default function MobileTracking() {
           <p className="text-slate-500 text-sm mt-1">Hello, {patient.name}</p>
         </div>
 
+        {/* DOCTOR PAUSED BANNER */}
+        {clinic.isPaused && (
+          <div className="bg-amber-100 border-2 border-amber-400 text-amber-800 p-5 rounded-3xl text-center shadow-lg mb-6 transform transition-all duration-500">
+            <div className="bg-amber-500 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
+              <Clock className="w-6 h-6 text-white" />
+            </div>
+            <h3 className="text-xl font-black mb-1 tracking-tight">Queue Paused</h3>
+            <p className="font-medium text-amber-700/80 text-sm">{clinic.pauseReason || 'Doctor is currently unavailable.'}</p>
+            <p className="text-xs font-bold text-amber-600 mt-3 uppercase tracking-widest">Wait times are frozen</p>
+          </div>
+        )}
+
+        {/* PRIORITY TRIAGE BANNERS */}
+        {patient.priority === 'Emergency' && (
+          <div className="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-2xl flex items-center justify-center gap-2 animate-pulse shadow-sm">
+            <ShieldAlert className="w-5 h-5" />
+            <span className="font-bold text-sm uppercase tracking-wide">Emergency Priority Active</span>
+          </div>
+        )}
+        
+        {patient.priority === 'High' && (
+          <div className="bg-orange-100 border border-orange-200 text-orange-700 px-4 py-3 rounded-2xl flex items-center justify-center gap-2 shadow-sm">
+            <Activity className="w-5 h-5" />
+            <span className="font-bold text-sm uppercase tracking-wide">High Priority Active</span>
+          </div>
+        )}
+
         {isMyTurn ? (
           <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-3xl shadow-lg p-8 text-center text-white animate-pulse">
             <Bell className="w-16 h-16 mx-auto mb-4 opacity-90" />
@@ -151,16 +185,18 @@ export default function MobileTracking() {
           </div>
         ) : (
           <>
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8 text-center relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1.5 bg-blue-500"></div>
+            <div className={`bg-white rounded-3xl shadow-sm border p-8 text-center relative overflow-hidden ${patient.priority === 'Emergency' ? 'border-red-200' : patient.priority === 'High' ? 'border-orange-200' : 'border-slate-100'}`}>
+              <div className={`absolute top-0 left-0 w-full h-1.5 ${patient.priority === 'Emergency' ? 'bg-red-500' : patient.priority === 'High' ? 'bg-orange-500' : 'bg-blue-500'}`}></div>
               <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mb-3">Your Token Number</p>
-              <div className="text-7xl font-black text-slate-900 tracking-tighter">A-{patient.tokenNumber}</div>
+              <div className={`text-7xl font-black tracking-tighter ${patient.priority === 'Emergency' ? 'text-red-600' : patient.priority === 'High' ? 'text-orange-600' : 'text-slate-900'}`}>
+                A-{patient.tokenNumber}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-blue-600 text-white rounded-3xl p-6 text-center shadow-md shadow-blue-600/20">
+              <div className={`text-white rounded-3xl p-6 text-center shadow-md ${patient.priority === 'Emergency' ? 'bg-red-600 shadow-red-600/20' : patient.priority === 'High' ? 'bg-orange-500 shadow-orange-500/20' : 'bg-blue-600 shadow-blue-600/20'}`}>
                 <Clock className="w-8 h-8 mx-auto mb-3 opacity-80" />
-                <p className="text-blue-100 font-semibold text-sm mb-1">Live Wait</p>
+                <p className="text-white/80 font-semibold text-sm mb-1">Live Wait</p>
                 <p className="text-3xl font-black">~{finalDisplayWait}<span className="text-lg font-medium">m</span></p>
               </div>
               

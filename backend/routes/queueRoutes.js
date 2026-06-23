@@ -13,6 +13,7 @@ import {
   recallPatient,
   getPublicQueueState,
   skipPatient,
+  togglePauseQueue,
   resetQueue,
   cancelPatient,
   editPatient
@@ -53,5 +54,5 @@ router.put('/recall/:patientId', verifyToken, recallPatient);
 // Doctor Actions
 router.put('/advance', verifyToken, callNext);              
 router.put('/complete', verifyToken, completeConsultation); 
-
+router.put('/pause', verifyToken, togglePauseQueue);
 export default router;

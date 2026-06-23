@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { socket } from '../socket';
-import { Activity, CheckCircle2, LogOut, Users, Clock, UserCheck, ShieldAlert } from 'lucide-react';
+import { Activity, CheckCircle2, LogOut, Users, Clock, UserCheck, ShieldAlert, PauseCircle, PlayCircle } from 'lucide-react';
 
 export default function DoctorDashboard() {
-  const [queueData, setQueueData] = useState({ activeToken: 0, averageTime: 10, waitingList: [], clinicCode: '' });
+  // ADDED: isPaused and pauseReason to initial state
+  const [queueData, setQueueData] = useState({ activeToken: 0, averageTime: 10, waitingList: [], clinicCode: '', isPaused: false, pauseReason: '' });
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const hasJoined = useRef(false);
@@ -42,6 +43,22 @@ export default function DoctorDashboard() {
     }
   };
 
+  // NEW: Doctor controls the pause state
+  const handleTogglePause = async () => {
+    const reason = queueData.isPaused ? '' : window.prompt("Reason for pausing the queue?", "Taking a short break");
+    if (!queueData.isPaused && reason === null) return; // User clicked cancel
+
+    try {
+      await fetch(`http://${window.location.hostname}:5000/api/queue/pause`, {
+        method: 'PUT',
+        headers: authHeaders,
+        body: JSON.stringify({ reason })
+      });
+    } catch (error) {
+      console.error("Error toggling pause:", error);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.clear();
     navigate('/doctor/login');
@@ -62,7 +79,6 @@ export default function DoctorDashboard() {
         </div>
         
         <div className="flex items-center gap-4">
-          {/* HACKATHON ADDITION: Real-time Clinic Code Tracker */}
           <div className="hidden sm:flex items-center gap-2 bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl text-sm font-bold text-slate-600 shadow-inner">
             <span className="text-slate-400 font-medium">Clinic network ID:</span>
             <span className="text-blue-600 tracking-wider font-black uppercase">{queueData.clinicCode || 'Loading...'}</span>
@@ -103,31 +119,47 @@ export default function DoctorDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* LEFT COLUMN: Main Consultation Console */}
           <div className="lg:col-span-7 flex flex-col gap-6">
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-12 text-center flex-1 flex flex-col justify-center relative overflow-hidden min-h-[420px]">
-              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-400 to-indigo-500"></div>
+            <div className={`rounded-3xl shadow-sm border p-12 text-center flex-1 flex flex-col justify-center relative overflow-hidden min-h-[420px] transition-colors duration-500 ${queueData.isPaused ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-100'}`}>
+              <div className={`absolute top-0 left-0 w-full h-2 ${queueData.isPaused ? 'bg-amber-400 animate-pulse' : 'bg-gradient-to-r from-blue-400 to-indigo-500'}`}></div>
               
-              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">Inside Cabin</h2>
+              <h2 className={`text-sm font-bold uppercase tracking-widest mb-6 ${queueData.isPaused ? 'text-amber-500' : 'text-slate-400'}`}>
+                {queueData.isPaused ? 'QUEUE IS PAUSED' : 'Inside Cabin'}
+              </h2>
               
-              <div className="text-9xl font-black text-slate-900 tracking-tighter mb-12 select-none">
+              <div className={`text-9xl font-black tracking-tighter mb-12 select-none ${queueData.isPaused ? 'text-amber-900/50' : 'text-slate-900'}`}>
                 {isRoomEmpty ? '--' : `A-${queueData.activeToken}`}
               </div>
               
-              {isRoomEmpty ? (
-                /* STRICT STATE GUARD: Tells doctor to wait on front desk administrative assignment */
-                <div className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-6 px-4 flex items-center justify-center gap-3 text-slate-500 font-semibold text-lg border-dashed">
-                  <ShieldAlert className="w-6 h-6 text-slate-400 animate-pulse" />
-                  Waiting for front desk to dispatch next token...
-                </div>
-              ) : (
-                /* Doctor Control Action */
+              <div className="space-y-4">
+                {isRoomEmpty ? (
+                  /* STRICT STATE GUARD: Tells doctor to wait */
+                  <div className={`w-full border rounded-2xl py-6 px-4 flex items-center justify-center gap-3 font-semibold text-lg border-dashed ${queueData.isPaused ? 'bg-amber-100/50 border-amber-300 text-amber-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                    <ShieldAlert className={`w-6 h-6 ${queueData.isPaused ? 'text-amber-500' : 'text-slate-400 animate-pulse'}`} />
+                    {queueData.isPaused ? `Paused: ${queueData.pauseReason}` : 'Waiting for front desk to dispatch next token...'}
+                  </div>
+                ) : (
+                  /* Doctor Control Action */
+                  <button 
+                    onClick={handleComplete} disabled={isLoading || queueData.isPaused}
+                    className="w-full py-6 rounded-2xl text-2xl font-bold flex justify-center items-center gap-3 transition-all bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 hover:-translate-y-1 active:translate-y-0 disabled:opacity-50 disabled:hover:translate-y-0"
+                  >
+                    {isLoading ? 'Processing...' : 'Complete Consultation'}
+                    {!isLoading && <CheckCircle2 className="w-6 h-6" />}
+                  </button>
+                )}
+
+                {/* PAUSE TOGGLE BUTTON */}
                 <button 
-                  onClick={handleComplete} disabled={isLoading}
-                  className="w-full py-6 rounded-2xl text-2xl font-bold flex justify-center items-center gap-3 transition-all bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 hover:-translate-y-1 active:translate-y-0 disabled:opacity-50"
+                  onClick={handleTogglePause}
+                  className={`w-full py-4 rounded-2xl font-bold flex justify-center items-center gap-2 transition-all border-2 ${queueData.isPaused ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500 shadow-lg shadow-amber-500/30' : 'bg-white text-amber-600 border-amber-200 hover:bg-amber-50 hover:border-amber-300'}`}
                 >
-                  {isLoading ? 'Processing...' : 'Complete Consultation'}
-                  {!isLoading && <CheckCircle2 className="w-6 h-6" />}
+                  {queueData.isPaused ? (
+                    <><PlayCircle className="w-5 h-5" /> Resume Operations</>
+                  ) : (
+                    <><PauseCircle className="w-5 h-5" /> Pause Queue (Take Break)</>
+                  )}
                 </button>
-              )}
+              </div>
             </div>
           </div>
 
@@ -153,7 +185,11 @@ export default function DoctorDashboard() {
                           A-{p.tokenNumber}
                         </div>
                         <div>
-                          <p className="font-bold text-slate-900">{p.name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-slate-900">{p.name}</p>
+                            {p.priority === 'Emergency' && <span className="bg-red-100 text-red-700 text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase">EMG</span>}
+                            {p.priority === 'High' && <span className="bg-orange-100 text-orange-700 text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase">HIGH</span>}
+                          </div>
                           {i === 0 && <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mt-0.5">Next in Line</p>}
                         </div>
                       </li>
