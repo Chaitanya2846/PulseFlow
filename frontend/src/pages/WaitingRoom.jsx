@@ -1,12 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { socket } from '../socket';
-import { Activity, Clock, ArrowRight, Users } from 'lucide-react';
+import { Activity, Clock, ArrowRight, Users, Volume2, VolumeX } from 'lucide-react';
 
 export default function WaitingRoom() {
   const { clinicCode } = useParams(); 
   const [queueData, setQueueData] = useState(null);
   const [error, setError] = useState('');
+  
+  // Audio state and tracking
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const prevTokenRef = useRef(null);
   const hasJoined = useRef(false);
 
   useEffect(() => {
@@ -17,6 +21,9 @@ export default function WaitingRoom() {
           setError(data.message);
         } else {
           setQueueData(data);
+          // Set initial token so we don't announce it immediately on load
+          prevTokenRef.current = data.activeToken;
+          
           if (!hasJoined.current && data.clinicId) {
             socket.emit('join_clinic_room', data.clinicId);
             hasJoined.current = true;
@@ -31,6 +38,42 @@ export default function WaitingRoom() {
 
     return () => socket.off('queue_updated');
   }, [clinicCode]);
+
+  // ==========================================
+  // TEXT-TO-SPEECH (TTS) ENGINE
+  // ==========================================
+  useEffect(() => {
+    if (queueData && queueData.activeToken !== 0) {
+      // If the token has changed and it's not the initial load
+      if (prevTokenRef.current !== null && prevTokenRef.current !== queueData.activeToken) {
+        
+        if (audioEnabled && 'speechSynthesis' in window) {
+          // Cancel any ongoing speech to avoid overlap
+          window.speechSynthesis.cancel();
+          
+          const textToSpeak = `Token number A ${queueData.activeToken}. Please proceed to the doctor's cabin.`;
+          const utterance = new SpeechSynthesisUtterance(textToSpeak);
+          
+          // Optimize pacing for clarity in a waiting room
+          utterance.rate = 0.85; 
+          utterance.pitch = 1;
+          
+          window.speechSynthesis.speak(utterance);
+        }
+      }
+      // Update the ref to the current token
+      prevTokenRef.current = queueData.activeToken;
+    }
+  }, [queueData?.activeToken, audioEnabled]);
+
+  const toggleAudio = () => {
+    setAudioEnabled(!audioEnabled);
+    // Play a tiny silent utterance immediately on click to unlock iOS/Safari audio context
+    if (!audioEnabled && 'speechSynthesis' in window) {
+      const unlockUtterance = new SpeechSynthesisUtterance("");
+      window.speechSynthesis.speak(unlockUtterance);
+    }
+  };
 
   if (error) return <div className="h-screen w-screen bg-slate-900 flex items-center justify-center text-red-400 text-4xl font-bold">{error}</div>;
   if (!queueData) return <div className="h-screen w-screen bg-slate-900 flex items-center justify-center text-white text-4xl font-bold animate-pulse">Loading Display...</div>;
@@ -49,11 +92,23 @@ export default function WaitingRoom() {
           </div>
           <span className="tracking-tight uppercase">{queueData.clinicName}</span>
         </h1>
-        <div className="flex items-center gap-4 bg-slate-100 px-6 py-3 rounded-2xl border border-slate-200">
-          <Clock className="w-8 h-8 text-slate-500 hidden sm:block" />
-          <div>
-            <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Average Pace</p>
-            <p className="text-xl xl:text-2xl font-black text-slate-900">~{Math.round(queueData.averageTime)} mins / patient</p>
+        
+        <div className="flex items-center gap-6">
+          {/* AUDIO TOGGLE BUTTON */}
+          <button 
+            onClick={toggleAudio}
+            className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-bold transition-all shadow-sm ${audioEnabled ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-red-100 text-red-700 border border-red-200 animate-pulse'}`}
+          >
+            {audioEnabled ? <Volume2 className="w-6 h-6" /> : <VolumeX className="w-6 h-6" />}
+            <span className="hidden sm:inline text-lg">{audioEnabled ? 'Voice Active' : 'Enable Voice'}</span>
+          </button>
+
+          <div className="flex items-center gap-4 bg-slate-100 px-6 py-3 rounded-2xl border border-slate-200">
+            <Clock className="w-8 h-8 text-slate-500 hidden sm:block" />
+            <div>
+              <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Average Pace</p>
+              <p className="text-xl xl:text-2xl font-black text-slate-900">~{Math.round(queueData.averageTime)} mins / patient</p>
+            </div>
           </div>
         </div>
       </header>

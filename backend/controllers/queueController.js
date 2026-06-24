@@ -237,10 +237,16 @@ export const resetQueue = async (req, res) => {
       await clinic.save();
     }
 
-    await Patient.deleteMany({ clinicId, status: { $in: ['waiting', 'serving', 'skipped', 'cancelled'] } });
+    // ENTERPRISE FIX: Data Archiving instead of Deletion.
+    // We update everyone's status to 'archived' so they disappear from the active dashboards, 
+    // but remain permanently saved in MongoDB for hospital analytics!
+    await Patient.updateMany(
+      { clinicId, status: { $ne: 'archived' } }, 
+      { $set: { status: 'archived' } } 
+    );
 
     await broadcastClinicState(req.io, clinicId);
-    res.status(200).json({ success: true, message: "Queue reset for new session" });
+    res.status(200).json({ success: true, message: "Queue archived securely and reset for new session" });
   } catch (error) {
     res.status(500).json({ message: "Error resetting queue" });
   }
